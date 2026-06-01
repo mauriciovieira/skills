@@ -1,0 +1,36 @@
+---
+# Bootstrap playbook - run once on a fresh VPS
+# Creates deploy user, installs SSH keys, prepares system for non-root automation
+# Usage: ansible-playbook -i inventory/production.yml playbooks/bootstrap.yml -l <host>
+- name: Bootstrap new VPS
+  hosts: all
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Validate deploy_ssh_key is set and looks like an OpenSSH public key
+      ansible.builtin.assert:
+        that:
+          - deploy_ssh_key | trim | length > 0
+          - "' ' in (deploy_ssh_key | trim)"
+        fail_msg: >-
+          deploy_ssh_key must be one full line (e.g. ssh-ed25519 AAAAC3... comment).
+          Prefer: DEPLOY_SSH_KEY="$(cat ~/.ssh/your.pub)" make bootstrap
+          so the whole key is passed in the environment. Passing -e deploy_ssh_key=... through a shell
+          often truncates at the first space unless the entire value is quoted.
+
+  roles:
+    - role: common
+      tags: [bootstrap, common]
+    - role: users
+      tags: [bootstrap, users]
+    # ssh_bootstrap: removes 50-cloud-init.conf + 60-cloudimg-settings.conf, then installs
+    # /etc/ssh/sshd_config.d/05-ansible-sshd-hardening.conf (PasswordAuthentication no, PubkeyAuthentication yes,
+    # PermitEmptyPasswords no, PermitRootLogin from sshd_permit_root_login). Root-only; not in site.yml.
+    - role: ssh_bootstrap
+      tags: [bootstrap, ssh, ssh_bootstrap]
+    # UFW as root before Docker (site.yml); avoids iptables fights + SSH SYN without SYN-ACK.
+    - role: firewall
+      tags: [bootstrap, firewall, security]
+    - role: opt
+      tags: [bootstrap, opt]

@@ -1,0 +1,84 @@
+---
+# Global variables for all hosts
+
+# Timezone
+timezone: "America/Sao_Paulo"
+
+# Deploy user configuration
+deploy_user: __DEPLOY_USER__
+deploy_group: __DEPLOY_USER__
+deploy_home: "/home/{{ deploy_user }}"
+# Prefer DEPLOY_SSH_KEY in the environment (avoids shell breaking on spaces in make -e).
+# CI / ad hoc can still pass -e deploy_ssh_key=… (single line, properly quoted).
+deploy_ssh_key: "{{ lookup('env', 'DEPLOY_SSH_KEY') | default('', true) | trim }}"
+
+# SSH hardening: PermitRootLogin must be quoted ("no" not bare no — YAML boolean).
+# "prohibit-password" = root allowed with pubkey only (needs /root/.ssh/authorized_keys).
+sshd_permit_root_login: "no"
+
+# Ansible settings
+# Default SSH user for playbooks: root (bootstrap + ad-hoc). `make ansible` passes -u $(ANSIBLE_REMOTE_USER)
+# (default: deploy user). sshd is configured only in bootstrap (root); site.yml does not touch /etc/ssh.
+ansible_user: root
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+# Pin interpreter to distro python3 (e.g. 3.12 on Ubuntu 24.04 LTS); avoids discovery warnings when multiple Pythons exist.
+ansible_python_interpreter: /usr/bin/python3
+
+# Firewall (bootstrap role only): reset UFW before applying rules — clears broken/stale user.rules + iptables state.
+firewall_ufw_reset_before_apply: true
+
+# Docker configuration
+docker_network_name: proxy
+docker_network_driver: bridge
+# Bridge MTU for containers (default 1450). Helps avoid HTTPS timeouts to the internet
+# (e.g. kamal-proxy → Let's Encrypt) on some VPS networks. Set to 0 to omit from daemon.json.
+docker_daemon_mtu: 1450
+
+# Traefik configuration
+traefik_docker_image: "traefik:v3.2"
+traefik_data_dir: "/opt/traefik"
+traefik_acme_dir: "{{ traefik_data_dir }}/acme"
+traefik_config_dir: "{{ traefik_data_dir }}/config"
+traefik_dashboard_enabled: true
+traefik_dashboard_domain: "traefik.{{ hostname }}"
+traefik_dashboard_user: "admin"
+# Set traefik_dashboard_password in CI or -e; use htpasswd -nb admin <password>
+traefik_dashboard_password_hash: "{{ lookup('env', 'TRAEFIK_DASHBOARD_HASH') | default('$apr1$xyz$dummy', true) }}"
+
+# Host defaults - hostname overridden per host in inventory
+hostname: "{{ inventory_hostname }}"
+
+# Let's Encrypt - overridden per host in inventory
+letsencrypt_email: "__LETSENCRYPT_EMAIL__"
+letsencrypt_staging: false
+
+# PostgreSQL: do not set postgresql_enabled here — it would override inventory group vars.
+# Enable per group in inventory (e.g. __INVENTORY_GROUP__ in production.yml). Playbook uses default(false) when unset.
+
+# Kamal 2 uses kamal-proxy on 80/443. Keep Traefik off unless you integrate with kamal-proxy (see infra/README.md).
+traefik_enabled: false
+
+# PostgreSQL - app databases (never commit real values)
+# Local: `make ansible` loads these via custom (see Makefile).
+# Pass paths: __PASS_NAMESPACE__/postgres___APP_SLUG___{prod,staging}_password
+postgres___APP_SLUG___prod_password: "{{ lookup('env', 'POSTGRES___APP_SLUG_UPPER___PROD_PASSWORD') | default('', true) }}"
+# >>> staging-only
+postgres___APP_SLUG___staging_password: "{{ lookup('env', 'POSTGRES___APP_SLUG_UPPER___STAGING_PASSWORD') | default('', true) }}"
+# <<< staging-only
+
+# PostgreSQL configuration - override per host in inventory if needed
+# Major version for package paths and cluster (PGDG: postgresql-16). Not every Ubuntu codename gets every new major from PGDG — verify with `apt-cache policy postgresql-16` on the host after the PGDG repo is configured.
+postgresql_version: 16
+postgresql_port: 5432
+# Listen only on loopback + Docker bridge gateway IPs (discovered in role). Never bind 0.0.0.0.
+postgresql_docker_network_names:
+  - bridge
+  - "{{ docker_network_name }}"
+  - kamal
+# If Docker inspect returns no subnets (e.g. before first deploy), use default bridge CIDR for pg_hba/UFW.
+postgresql_fallback_docker_cidr: "172.17.0.0/16"
+# Optional manual additions (e.g. extra bridge after custom setup)
+postgresql_listen_addresses_extra: []
+postgresql_pg_hba_extra_cidrs: []
+# Apply UFW allow rules for 5432 from 127.0.0.0/8 + discovered Docker CIDRs (UFW enabled in bootstrap).
+postgresql_firewall_ufw_enable: true

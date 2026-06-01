@@ -1,0 +1,45 @@
+---
+- name: Create Traefik data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0755"
+  loop:
+    - "{{ traefik_data_dir }}"
+    - "{{ traefik_acme_dir }}"
+    - "{{ traefik_config_dir }}"
+
+- name: Deploy Traefik static config
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ traefik_config_dir }}/traefik.yml"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0644"
+
+- name: Create empty acme.json with correct permissions
+  ansible.builtin.file:
+    path: "{{ traefik_acme_dir }}/acme.json"
+    state: touch
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0600"
+
+- name: Deploy Traefik docker-compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ traefik_data_dir }}/docker-compose.yml"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0644"
+
+- name: Start Traefik with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ traefik_data_dir }}"
+    state: present
+  become: true
+  become_user: "{{ deploy_user }}"
+  environment:
+    DOCKER_HOST: unix:///var/run/docker.sock

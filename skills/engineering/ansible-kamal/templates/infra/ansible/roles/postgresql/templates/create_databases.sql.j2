@@ -1,0 +1,15 @@
+-- Managed by Ansible - postgresql role (reference; idempotent provisioning uses Ansible modules)
+CREATE USER __APP_SLUG___prod_user WITH PASSWORD '{{ postgres___APP_SLUG___prod_password }}';
+-- >>> staging-only
+CREATE USER __APP_SLUG___staging_user WITH PASSWORD '{{ postgres___APP_SLUG___staging_password }}';
+-- <<< staging-only
+
+CREATE DATABASE __APP_SLUG___production OWNER __APP_SLUG___prod_user;
+-- >>> staging-only
+CREATE DATABASE __APP_SLUG___staging OWNER __APP_SLUG___staging_user;
+-- <<< staging-only
+
+GRANT ALL PRIVILEGES ON DATABASE __APP_SLUG___production TO __APP_SLUG___prod_user;
+-- >>> staging-only
+GRANT ALL PRIVILEGES ON DATABASE __APP_SLUG___staging TO __APP_SLUG___staging_user;
+-- <<< staging-only

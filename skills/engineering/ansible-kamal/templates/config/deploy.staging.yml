@@ -1,0 +1,23 @@
+# Kamal 2 destination: staging (merged with config/deploy.yml)
+# Deploy: bundle exec kamal deploy -d staging
+
+service: __APP_SERVICE__-staging
+
+env:
+  clear:
+    RAILS_ENV: staging
+    HOST_IP: __DOMAIN_STAGING__
+    DATABASE_HOST: host.docker.internal
+    DATABASE_PORT: "5432"
+    DATABASE_NAME: __APP_SLUG___staging
+    DATABASE_USERNAME: __APP_SLUG___staging_user
+  secret:
+    - RAILS_MASTER_KEY
+    - DATABASE_PASSWORD
+    - RESEND_API_KEY
+    - BUILD_COMMIT
+
+proxy:
+  ssl: true
+  host: __DOMAIN_STAGING__
+  forward_headers: true

@@ -1,0 +1,58 @@
+---
+- name: Create deploy group
+  ansible.builtin.group:
+    name: "{{ deploy_group }}"
+    state: present
+
+- name: Create deploy user (no sudo group)
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    groups: "{{ deploy_group }}"
+    append: false
+    create_home: true
+    home: "{{ deploy_home }}"
+    shell: /bin/bash
+    state: present
+
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: "{{ deploy_home }}/.ssh"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0700"
+
+- name: Add deploy SSH public key
+  managed_authorized_key:
+    user: "{{ deploy_user }}"
+    key: "{{ deploy_ssh_key | trim }}"
+    state: present
+  when: deploy_ssh_key | trim | length > 0
+
+- name: Check for deploy authorized_keys
+  ansible.builtin.stat:
+    path: "{{ deploy_home }}/.ssh/authorized_keys"
+  register: users_authorized_keys_stat
+
+- name: Ensure deploy authorized_keys permissions when present
+  ansible.builtin.file:
+    path: "{{ deploy_home }}/.ssh/authorized_keys"
+    state: file
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0600"
+  when: users_authorized_keys_stat.stat.exists | default(false)
+
+- name: Create restricted sudoers file for deploy
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ deploy_user }}"
+    content: |
+      # Deploy: restricted sudo, no root shell. Docker access via group membership.
+      {{ deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl
+      {{ deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt
+      {{ deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt-get
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"

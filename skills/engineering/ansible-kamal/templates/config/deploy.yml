@@ -1,0 +1,66 @@
+# Kamal 2 — production (__DOMAIN_PROD__)
+# Deploy: bundle exec kamal deploy
+# Secrets: see infra/kamal/README.md — runtime files are .kamal/.deploy-secrets* (not the tracked .kamal/secrets* templates).
+#
+# PostgreSQL runs on the VPS host. Containers reach it via host.docker.internal (Docker host-gateway).
+
+secrets_path: .kamal/.deploy-secrets
+
+service: __APP_SERVICE__
+image: __IMAGE_REPO__
+
+servers:
+  web:
+    hosts:
+      - __VPS_IP__
+    options:
+      add-host: host.docker.internal:host-gateway
+  # Good Job worker (production uses execution_mode :external — see config/initializers/good_job.rb).
+  # Procfile is not used by Kamal; this role runs the same image with a different command.
+  worker:
+    hosts:
+      - __VPS_IP__
+    cmd: "bundle exec good_job start"
+    options:
+      add-host: host.docker.internal:host-gateway
+
+ssh:
+  user: __DEPLOY_USER__
+  keys:
+    - .kamal/deploy_ssh_key
+  keys_only: true
+
+registry:
+  server: ghcr.io
+  username:
+    - KAMAL_REGISTRY_USERNAME
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+
+env:
+  clear:
+    RAILS_ENV: production
+    HOST_IP: __DOMAIN_PROD__
+    DATABASE_HOST: host.docker.internal
+    DATABASE_PORT: "5432"
+    DATABASE_NAME: __APP_SLUG___production
+    DATABASE_USERNAME: __APP_SLUG___prod_user
+  secret:
+    - RAILS_MASTER_KEY
+    - DATABASE_PASSWORD
+    - RESEND_API_KEY
+    - BUILD_COMMIT
+
+proxy:
+  ssl: true
+  host: __DOMAIN_PROD__
+  forward_headers: true
+
+aliases:
+  console: app exec --interactive --reuse "bin/rails console"
+  shell: app exec --interactive --reuse "bash"
+  logs: app logs -f
+  dbc: app exec --interactive --reuse "bin/rails dbconsole"

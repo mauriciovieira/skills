@@ -1,0 +1,6 @@
+{# MTU: cloud VPS paths often need <1500 or HTTPS from containers times out (e.g. Let's Encrypt from kamal-proxy). Set docker_daemon_mtu: 0 for {}. #}
+{% if docker_daemon_mtu | int > 0 %}
+{"mtu": {{ docker_daemon_mtu | int }}}
+{% else %}
+{}
+{% endif %}

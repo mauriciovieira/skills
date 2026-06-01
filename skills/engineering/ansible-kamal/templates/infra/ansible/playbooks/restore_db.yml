@@ -1,0 +1,121 @@
+---
+- name: Restore PostgreSQL database from local dump
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    restore_dump_path_remote: "/tmp/{{ restore_env }}-restore.dump"
+    restore_db_password: "{{ lookup('env', 'RESTORE_DB_PASSWORD') }}"
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - restore_env is defined
+# >>> staging-only
+          - restore_env in ['staging', 'production']
+# <<< staging-only
+# >>> single-only
+          - restore_env in ['production']
+# <<< single-only
+          - restore_dump_path_local is defined
+          - restore_dump_path_local | length > 0
+          - restore_db_host is defined
+          - restore_db_port is defined
+          - restore_db_name is defined
+          - restore_db_name | length > 0
+          - restore_db_name is match('^[_a-zA-Z][_a-zA-Z0-9]*$')
+          - restore_db_user is defined
+          - restore_db_user | length > 0
+          - restore_db_password is defined
+          - restore_db_password | length > 0
+        fail_msg: >-
+          Missing or invalid restore vars (restore_db_name must be a simple identifier:
+          letters, digits, underscores). Check script inputs.
+
+    - name: Ensure local dump file exists
+      delegate_to: localhost
+      become: false
+      ansible.builtin.stat:
+        path: "{{ restore_dump_path_local }}"
+      register: local_dump_stat
+
+    - name: Abort when local dump is missing
+      ansible.builtin.assert:
+        that:
+          - local_dump_stat.stat.exists
+          - local_dump_stat.stat.size | int > 0
+        fail_msg: "Local dump file is missing or empty."
+
+  tasks:
+    - name: Copy, restore, and always clean up remote dump file
+      block:
+        - name: Copy dump file to remote host
+          ansible.builtin.copy:
+            src: "{{ restore_dump_path_local }}"
+            dest: "{{ restore_dump_path_remote }}"
+            mode: "0600"
+            owner: postgres
+            group: postgres
+
+        # Inline DB name in SQL: psql :'var' substitution is unreliable on some clients;
+        # argv avoids shell interpolation while still sending a literal SQL string.
+        # restore_db_name is validated above as a single SQL identifier token (no quotes).
+        - name: Terminate active sessions on target DB
+          become: true
+          become_user: postgres
+          ansible.builtin.command:
+            argv:
+              - psql
+              - -d
+              - postgres
+              - -c
+              - >-
+                  SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                  WHERE datname = '{{ restore_db_name }}'
+                  AND pid <> pg_backend_pid();
+          changed_when: false
+
+        # Heroku dumps include extensions (pg_stat_statements) only a superuser can replace.
+        # Restore as local peer postgres (no --role): pg_restore 16 cannot --exclude-extension.
+        # Then hand the DB and public objects to the app role via OWNER + GRANT.
+        - name: Restore dump into target DB
+          become: true
+          become_user: postgres
+          ansible.builtin.command:
+            argv:
+              - pg_restore
+              - --clean
+              - --if-exists
+              - --no-owner
+              - --no-privileges
+              - "-d"
+              - "{{ restore_db_name }}"
+              - "{{ restore_dump_path_remote }}"
+          register: pg_restore_result
+          changed_when: pg_restore_result.rc == 0
+          failed_when: pg_restore_result.rc != 0
+
+        - name: Hand database and public schema to app role for Rails
+          become: true
+          become_user: postgres
+          ansible.builtin.shell: |
+            psql -d "{{ restore_db_name }}" -v ON_ERROR_STOP=1 -c "
+            ALTER DATABASE {{ restore_db_name }} OWNER TO {{ restore_db_user }};
+            ALTER SCHEMA public OWNER TO {{ restore_db_user }};
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ restore_db_user }};
+            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ restore_db_user }};
+            GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO {{ restore_db_user }};
+            "
+          changed_when: true
+
+        - name: Show pg_restore warnings (if any)
+          ansible.builtin.debug:
+            msg: "{{ pg_restore_result.stderr_lines }}"
+          when: pg_restore_result.stderr | default('') | length > 0
+      always:
+        - name: Remove remote dump file
+          ansible.builtin.file:
+            path: "{{ restore_dump_path_remote }}"
+            state: absent

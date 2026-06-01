@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Applied during bootstrap (root only). Cloud image snippets 50-cloud-init / 60-cloudimg
+# are removed by the ssh_bootstrap role to avoid OpenSSH "first keyword wins" conflicts.
+
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+PermitRootLogin {{ sshd_permit_root_login }}

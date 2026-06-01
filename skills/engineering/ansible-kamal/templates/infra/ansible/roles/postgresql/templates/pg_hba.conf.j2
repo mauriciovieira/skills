@@ -1,0 +1,17 @@
+# Managed by Ansible - postgresql role
+# TYPE  DATABASE                USER                    ADDRESS                 METHOD
+local   all                     postgres                                        peer
+local   __APP_SLUG___production   __APP_SLUG___prod_user                            md5
+# >>> staging-only
+local   __APP_SLUG___staging      __APP_SLUG___staging_user                         md5
+# <<< staging-only
+host    __APP_SLUG___production   __APP_SLUG___prod_user    127.0.0.1/32            md5
+# >>> staging-only
+host    __APP_SLUG___staging      __APP_SLUG___staging_user 127.0.0.1/32            md5
+# <<< staging-only
+{% for cidr in postgresql_pg_hba_docker_cidrs %}
+host    __APP_SLUG___production   __APP_SLUG___prod_user    {{ cidr }}            md5
+# >>> staging-only
+host    __APP_SLUG___staging      __APP_SLUG___staging_user {{ cidr }}            md5
+# <<< staging-only
+{% endfor %}

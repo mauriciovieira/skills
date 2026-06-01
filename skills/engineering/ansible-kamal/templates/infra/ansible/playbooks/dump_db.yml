@@ -1,0 +1,80 @@
+---
+- name: Dump PostgreSQL database to local file
+  hosts: __INVENTORY_GROUP__
+  become: true
+  gather_facts: false
+
+  vars:
+    dump_db_password: "{{ lookup('env', 'DUMP_DB_PASSWORD') }}"
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - dump_env is defined
+# >>> staging-only
+          - dump_env in ['staging', 'production']
+# <<< staging-only
+# >>> single-only
+          - dump_env in ['production']
+# <<< single-only
+          - dump_db_name is defined
+          - dump_db_name | length > 0
+          - dump_db_name is match('^[_a-zA-Z][_a-zA-Z0-9]*$')
+          - dump_db_user is defined
+          - dump_db_user | length > 0
+          - dump_output_local is defined
+          - dump_output_local | length > 0
+          - dump_db_password is defined
+          - dump_db_password | length > 0
+        fail_msg: >-
+          Missing or invalid dump vars (dump_db_name must be a simple identifier:
+          letters, digits, underscores). Check script inputs.
+
+  tasks:
+    - name: Dump remote DB, fetch locally, and always clean up
+      block:
+        - name: Create remote temporary dump file path
+          become: true
+          become_user: postgres
+          ansible.builtin.tempfile:
+            state: file
+            path: /tmp
+            prefix: "{{ dump_env }}-"
+            suffix: .dump
+          register: remote_dump_file
+
+        - name: Run pg_dump in custom format
+          become: true
+          become_user: postgres
+          ansible.builtin.command:
+            argv:
+              - pg_dump
+              - -Fc
+              - -h
+              - 127.0.0.1
+              - -p
+              - "5432"
+              - -U
+              - "{{ dump_db_user }}"
+              - -d
+              - "{{ dump_db_name }}"
+              - -f
+              - "{{ remote_dump_file.path }}"
+          environment:
+            PGPASSWORD: "{{ dump_db_password }}"
+          register: pg_dump_result
+          changed_when: pg_dump_result.rc == 0
+          failed_when: pg_dump_result.rc != 0
+
+        - name: Fetch dump file from remote host
+          ansible.builtin.fetch:
+            src: "{{ remote_dump_file.path }}"
+            dest: "{{ dump_output_local }}"
+            flat: true
+      always:
+        - name: Remove remote dump file
+          ansible.builtin.file:
+            path: "{{ remote_dump_file.path | default('') }}"
+            state: absent
+          when: remote_dump_file is defined and remote_dump_file.path is defined
