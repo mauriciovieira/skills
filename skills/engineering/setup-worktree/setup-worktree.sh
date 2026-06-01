@@ -3,7 +3,7 @@
 # env files from the main repo. Language-agnostic: walks the main repo for
 # known manifests and links each matching deps dir if it exists in main.
 #
-# Manifest -> deps dir candidates (first existing wins per manifest):
+# Manifest -> deps dir candidates (every candidate that exists in main is linked):
 #   package.json     -> node_modules
 #   pyproject.toml   -> .venv, venv, env
 #   requirements.txt -> .venv, venv, env
