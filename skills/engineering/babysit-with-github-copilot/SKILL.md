@@ -48,7 +48,7 @@ schedule the next cycle instead of merging.
    can finish seconds before the review summary posts (this exact race has
    shipped PRs with unaddressed comments). Gate on the review event, not the
    Action. Check:
-   `gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601) > ($lp|fromdateiso8601))] | length'`
+   `gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0))] | length'`
    — must be `≥ 1` before any merge. This uses a numeric epoch compare via
    `fromdateiso8601`, **not** a string compare, so it is robust to `Z`/offset/
    fractional-second formatting differences. (If `<last_push_at>` is empty you
@@ -140,9 +140,13 @@ gh run list --branch <head-branch> --workflow "Running Copilot Code Review" --li
 Then fetch inline comments newer than the relevant watermark:
 
 ```sh
-# After a fix push, filter against last_push_at; otherwise last_review_at:
-gh api repos/<owner>/<repo>/pulls/<N>/comments \
-  --jq '.[] | select(.created_at > "<ISO watermark>") | {path, line, body, created_at, user: .user.login}'
+# After a fix push, filter against last_push_at; otherwise last_review_at.
+# Numeric epoch compare via fromdateiso8601 (NOT string compare) — same
+# formatting hazard as the gate. `? // 0` makes it resilient: an empty/garbled
+# watermark defaults to epoch 0, so every comment counts as "new" (fail-safe
+# toward catching comments, never toward a premature merge).
+gh api repos/<owner>/<repo>/pulls/<N>/comments | jq --arg w "<ISO watermark>" \
+  '.[] | select((.created_at|fromdateiso8601? // 0) > ($w|fromdateiso8601? // 0)) | {path, line, body, created_at, user: .user.login}'
 ```
 
 Update `last_review_at` from the latest Copilot review. **Compute the merge
@@ -150,7 +154,7 @@ gate explicitly:** is there a Copilot review with `submittedAt > last_push_at`?
 
 ```sh
 gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" \
-  '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601) > ($lp|fromdateiso8601))] | length'
+  '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0))] | length'
 ```
 
 Compare timestamps numerically with `fromdateiso8601` (epoch seconds), never as
