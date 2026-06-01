@@ -1,0 +1,29 @@
+services:
+  traefik:
+    image: {{ traefik_docker_image }}
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - {{ traefik_acme_dir }}:{{ traefik_acme_dir }}
+      - {{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - proxy
+    {% if traefik_dashboard_enabled %}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`{{ traefik_dashboard_domain }}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users={{ traefik_dashboard_user }}:{{ traefik_dashboard_password_hash }}"
+    {% endif %}
+
+networks:
+  proxy:
+    external: true

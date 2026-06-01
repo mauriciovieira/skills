@@ -1,0 +1,93 @@
+---
+# Build listen_addresses (host IPs) and CIDRs for pg_hba + UFW from Docker networks.
+# Requires Docker installed (docker role runs before postgresql in site.yml).
+
+- name: Discover Docker network gateway (listen IP on host)
+  ansible.builtin.command: docker network inspect {{ item }} --format '{{ "{{(index .IPAM.Config 0).Gateway}}" }}'
+  register: postgresql_docker_gateway_results
+  loop: "{{ postgresql_docker_network_names }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: false
+  failed_when: false
+
+- name: Discover Docker network subnet (client CIDR for pg_hba / UFW)
+  ansible.builtin.command: docker network inspect {{ item }} --format '{{ "{{(index .IPAM.Config 0).Subnet}}" }}'
+  register: postgresql_docker_subnet_results
+  loop: "{{ postgresql_docker_network_names }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: false
+  failed_when: false
+
+- name: Build list of gateway IPs from successful inspections
+  ansible.builtin.set_fact:
+    postgresql_discovered_listen_ips: >-
+      {{
+        postgresql_docker_gateway_results.results
+        | selectattr('rc', 'equalto', 0)
+        | map(attribute='stdout')
+        | map('trim')
+        | reject('equalto', '')
+        | list
+      }}
+
+- name: Build list of Docker subnets from successful inspections
+  ansible.builtin.set_fact:
+    postgresql_discovered_docker_cidrs: >-
+      {{
+        postgresql_docker_subnet_results.results
+        | selectattr('rc', 'equalto', 0)
+        | map(attribute='stdout')
+        | map('trim')
+        | reject('equalto', '')
+        | list
+      }}
+
+- name: Merge extra listen IPs from group_vars
+  ansible.builtin.set_fact:
+    postgresql_listen_ips: >-
+      {{
+        (
+          ['127.0.0.1']
+          + (postgresql_discovered_listen_ips | default([]))
+          + (postgresql_listen_addresses_extra | default([]))
+        ) | unique | list
+      }}
+
+- name: Merge extra CIDRs from group_vars
+  ansible.builtin.set_fact:
+    postgresql_pg_hba_docker_cidrs: >-
+      {{
+        (
+          (postgresql_discovered_docker_cidrs | default([]))
+          + (postgresql_pg_hba_extra_cidrs | default([]))
+        ) | unique | list
+      }}
+
+- name: Try docker0 address when listen list is only localhost
+  ansible.builtin.shell: |
+    set -o pipefail
+    ip -4 -o addr show docker0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1
+  register: postgresql_docker0_ip
+  changed_when: false
+  failed_when: false
+  when: (postgresql_listen_ips | length) <= 1
+
+- name: Add docker0 IP to PostgreSQL listen list
+  ansible.builtin.set_fact:
+    postgresql_listen_ips: "{{ (postgresql_listen_ips + [postgresql_docker0_ip.stdout | trim]) | unique | list }}"
+  when:
+    - postgresql_docker0_ip.stdout is defined
+    - postgresql_docker0_ip.stdout | trim | length > 0
+
+- name: Apply fallback Docker CIDR when inspection returned none
+  ansible.builtin.set_fact:
+    postgresql_pg_hba_docker_cidrs: "{{ [postgresql_fallback_docker_cidr] }}"
+  when:
+    - (postgresql_pg_hba_docker_cidrs | length) == 0
+    - postgresql_fallback_docker_cidr | default('') | length > 0
+
+- name: Set final PostgreSQL listen_addresses string
+  ansible.builtin.set_fact:
+    postgresql_listen_addresses_effective: "{{ postgresql_listen_ips | join(',') }}"

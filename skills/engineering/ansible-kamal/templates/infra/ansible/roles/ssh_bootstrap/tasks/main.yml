@@ -1,0 +1,26 @@
+---
+# Run only from bootstrap.yml as root. site.yml (deploy user) must not manage sshd —
+# deploy sudo is limited to systemctl/apt and cannot edit /etc/ssh safely anyway.
+
+- name: Remove Ubuntu cloud sshd drop-ins (conflicting PasswordAuthentication)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/ssh/sshd_config.d/50-cloud-init.conf
+    - /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
+  notify: Restart ssh
+
+- name: Ensure sshd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    mode: "0755"
+
+# sshd_permit_root_login: "no" | "prohibit-password" | "yes" (group_vars / inventory)
+- name: Install ansible sshd hardening drop-in
+  ansible.builtin.template:
+    src: sshd_ansible_hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/05-ansible-sshd-hardening.conf
+    mode: "0644"
+  notify: Restart ssh

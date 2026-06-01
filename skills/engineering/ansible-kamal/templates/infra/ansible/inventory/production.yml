@@ -1,0 +1,15 @@
+---
+# Single VPS for __APP_SERVICE__ (Kamal + kamal-proxy).
+# Replace the host key with your server IP or DNS name if it changes.
+all:
+  children:
+    __INVENTORY_GROUP__:
+      vars:
+        postgresql_enabled: true
+        postgresql_version: 16
+        # Root SSH only with the same key as before (no root password); override in all.yml with "no" if you want root fully off.
+        sshd_permit_root_login: "prohibit-password"
+      hosts:
+        __VPS_IP__:
+          hostname: __DOMAIN_PROD__
+          letsencrypt_email: "__LETSENCRYPT_EMAIL__"

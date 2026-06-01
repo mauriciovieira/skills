@@ -1,0 +1,103 @@
+---
+- name: Create apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Add Docker repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ ansible_facts['architecture'] | replace('x86_64', 'amd64') }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable
+    state: present
+    filename: docker
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Configure Docker daemon (MTU for cloud / Let's Encrypt from containers)
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Apply Docker daemon changes before using Docker
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure Docker service is started
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add deploy user to docker group
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    groups: docker
+    append: true
+
+- name: Create proxy Docker network
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    driver: "{{ docker_network_driver }}"
+    state: present
+
+- name: Check Docker FORWARD chain exists
+  ansible.builtin.command: iptables -w -t filter -S DOCKER-FORWARD
+  register: docker_forward_chain
+  changed_when: false
+  failed_when: false
+
+- name: Restart Docker when FORWARD chain is missing
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+  when: docker_forward_chain.rc != 0
+
+# UFW and Docker share table ip filter (nft). `ufw reload` reapplies only UFW chains and
+# removes Docker's DOCKER / DOCKER-USER / DOCKER-FORWARD chains, breaking new publishes
+# (kamal-proxy, etc.). Only reload UFW when active, and only restart Docker if that reload
+# succeeded so the daemon reprograms iptables without causing avoidable downtime.
+- name: Check whether UFW is active
+  ansible.builtin.command: ufw status
+  register: docker_ufw_status
+  changed_when: false
+  failed_when: false
+
+- name: Reload UFW after Docker if enabled
+  ansible.builtin.command: ufw reload
+  register: docker_ufw_reload
+  changed_when: false
+  failed_when: false
+  when: "'Status: active' in docker_ufw_status.stdout"
+
+- name: Restart Docker after successful UFW reload (restore DOCKER* filter chains and NAT hooks)
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+  when:
+    - "'Status: active' in docker_ufw_status.stdout"
+    - docker_ufw_reload.rc == 0
+
+# Docker/iptables-nft can leave `chain INPUT` in table ip filter as policy drop only, with no
+# jump to ufw-before-input (IPv6 INPUT still correct). Re-hook via shared firewall tasks.
+- name: Restore UFW IPv4 INPUT nft hooks if Docker broke them
+  ansible.builtin.include_tasks:
+    file: ../../firewall/tasks/nft_input_rehook.yml

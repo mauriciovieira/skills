@@ -1,0 +1,102 @@
+---
+# Bootstrap only (root). Use only the ufw CLI here — mixing community.general.ufw with
+# ufw(8) has been seen to leave user.rules in odd states on some hosts.
+
+- name: Reset UFW to installation defaults (clears user rules; disables firewall until enable)
+  ansible.builtin.command: ufw --force reset
+  register: firewall_ufw_reset
+  changed_when: firewall_ufw_reset.rc == 0
+  failed_when: false
+  when: firewall_ufw_reset_before_apply | default(true) | bool
+
+# MANAGE_BUILTINS=yes is required on Ubuntu with iptables-nft (22.04+): without it, UFW
+# creates its chains but never adds the jump rules to the built-in INPUT chain, leaving INPUT
+# with only "policy drop" and no ACCEPT path — every new TCP connection (including SSH) is
+# silently dropped. With =yes UFW owns INPUT/OUTPUT/FORWARD policies and properly wires jumps.
+# This is safe alongside Docker: Docker manages FORWARD sub-chains (DOCKER, DOCKER-USER) and
+# does not set the INPUT policy; DEFAULT_FORWARD_POLICY=ACCEPT covers Docker's routing needs.
+- name: Set MANAGE_BUILTINS=yes in ufw defaults (required for iptables-nft INPUT wiring)
+  ansible.builtin.replace:
+    path: /etc/default/ufw
+    regexp: '^#?\s*MANAGE_BUILTINS=.*'
+    replace: 'MANAGE_BUILTINS=yes'
+
+- name: Force DEFAULT_FORWARD_POLICY=ACCEPT in ufw defaults (required for Docker/container routing)
+  ansible.builtin.replace:
+    path: /etc/default/ufw
+    regexp: '^#?\s*DEFAULT_FORWARD_POLICY=.*'
+    replace: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
+
+# Canonical order while UFW is still disabled: defaults, then explicit allows, then enable.
+- name: Set UFW default incoming policy (deny)
+  ansible.builtin.command: ufw default deny incoming
+  register: firewall_default_in
+  changed_when: "'Default incoming policy changed' in (firewall_default_in.stdout | default(''))"
+  failed_when: firewall_default_in.rc != 0
+
+- name: Set UFW default outgoing policy (allow)
+  ansible.builtin.command: ufw default allow outgoing
+  register: firewall_default_out
+  changed_when: "'Default outgoing policy changed' in (firewall_default_out.stdout | default(''))"
+  failed_when: firewall_default_out.rc != 0
+
+- name: Allow SSH (22/tcp)
+  ansible.builtin.command: ufw allow 22/tcp
+  register: firewall_allow_22
+  changed_when: "'Rule added' in (firewall_allow_22.stdout | default(''))"
+  failed_when: firewall_allow_22.rc != 0
+
+- name: Allow HTTP (80/tcp)
+  ansible.builtin.command: ufw allow 80/tcp
+  register: firewall_allow_80
+  changed_when: "'Rule added' in (firewall_allow_80.stdout | default(''))"
+  failed_when: firewall_allow_80.rc != 0
+
+- name: Allow HTTPS (443/tcp)
+  ansible.builtin.command: ufw allow 443/tcp
+  register: firewall_allow_443
+  changed_when: "'Rule added' in (firewall_allow_443.stdout | default(''))"
+  failed_when: firewall_allow_443.rc != 0
+
+# With MANAGE_BUILTINS=yes, ufw enable takes ownership of INPUT/OUTPUT/FORWARD and properly
+# wires jump rules. The existing SSH session survives because ufw-before-input includes
+# RELATED,ESTABLISHED before any DROP. Task timeout guards against rare Ansible module hangs.
+- name: Enable UFW
+  ansible.builtin.command: ufw --force enable
+  timeout: 120
+  register: firewall_ufw_enable
+  changed_when: true
+  failed_when: firewall_ufw_enable.rc != 0
+
+- name: Wait for SSH after UFW enable
+  ansible.builtin.wait_for_connection:
+    delay: 3
+    timeout: 120
+
+- name: Verify IPv4 INPUT has UFW jump rules (confirms MANAGE_BUILTINS=yes is effective)
+  ansible.builtin.command: nft list chain ip filter INPUT
+  register: firewall_nft_input_check
+  changed_when: false
+  failed_when: "'jump ufw' not in firewall_nft_input_check.stdout | default('')"
+
+- name: Verify UFW is enabled in ufw.conf
+  ansible.builtin.command: grep -qxF 'ENABLED=yes' /etc/ufw/ufw.conf
+  register: firewall_ufw_enabled_check
+  changed_when: false
+  failed_when: firewall_ufw_enabled_check.rc != 0
+
+- name: Capture ufw status for rule verification
+  ansible.builtin.command: ufw status
+  register: firewall_ufw_status_out
+  changed_when: false
+
+- name: Verify allow rules for 22, 80, 443 are present
+  ansible.builtin.assert:
+    that:
+      - "'22/tcp' in firewall_ufw_status_out.stdout"
+      - "'80/tcp' in firewall_ufw_status_out.stdout"
+      - "'443/tcp' in firewall_ufw_status_out.stdout"
+      - "'ALLOW' in firewall_ufw_status_out.stdout"
+    fail_msg: >-
+      ufw status missing expected ports. stdout:
+      {{ firewall_ufw_status_out.stdout | default('') }}

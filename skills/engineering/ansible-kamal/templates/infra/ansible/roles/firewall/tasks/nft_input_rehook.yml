@@ -1,0 +1,28 @@
+---
+# Docker + iptables-nft can replace `chain INPUT` in table ip filter with only
+# `policy drop`, orphaning ufw-before-input (IPv6 INPUT still has jumps — classic split-brain).
+# See: nft list chain ip filter INPUT  vs  nft list chain ip6 filter INPUT
+
+- name: Read IPv4 nft INPUT chain
+  ansible.builtin.command: nft list chain ip filter INPUT
+  register: firewall_nft_input_v4
+  changed_when: false
+  failed_when: false
+
+- name: Reapply UFW when IPv4 INPUT has no UFW jumps
+  ansible.builtin.shell: ufw disable && ufw --force enable
+  when: "'jump ufw' not in firewall_nft_input_v4.stdout | default('')"
+  register: firewall_rehook_ufw
+  changed_when: true
+
+- name: Wait for SSH after UFW re-hook
+  ansible.builtin.wait_for_connection:
+    delay: 3
+    timeout: 120
+  when: firewall_rehook_ufw is not skipped and firewall_rehook_ufw.rc == 0
+
+- name: Verify IPv4 INPUT jumps to UFW
+  ansible.builtin.command: nft list chain ip filter INPUT
+  register: firewall_nft_input_v4_verify
+  changed_when: false
+  failed_when: "'jump ufw' not in firewall_nft_input_v4_verify.stdout | default('')"

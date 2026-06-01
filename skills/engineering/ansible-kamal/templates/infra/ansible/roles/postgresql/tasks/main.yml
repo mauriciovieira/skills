@@ -1,0 +1,179 @@
+---
+- name: Require app PostgreSQL passwords when PostgreSQL is enabled on this host
+  ansible.builtin.assert:
+    that:
+      - postgres___APP_SLUG___prod_password | length > 0
+# >>> staging-only
+      - postgres___APP_SLUG___staging_password | length > 0
+# <<< staging-only
+    fail_msg: >-
+      Missing DB passwords. Set POSTGRES___APP_SLUG_UPPER___PROD_PASSWORD
+# >>> staging-only
+      and POSTGRES___APP_SLUG_UPPER___STAGING_PASSWORD
+# <<< staging-only
+      (e.g. make ansible with custom), or pass -e for automation.
+
+- name: Discover Docker networks for PostgreSQL listen addresses and pg_hba CIDRs
+  ansible.builtin.import_tasks: discover.yml
+
+- name: Ensure PGDG directory exists
+  ansible.builtin.file:
+    path: /usr/share/postgresql-common/pgdg
+    state: directory
+    mode: "0755"
+
+- name: Add PGDG repository signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+    mode: "0644"
+
+- name: Add PGDG APT repository
+  ansible.builtin.apt_repository:
+    repo: >
+      deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc]
+      https://apt.postgresql.org/pub/repos/apt {{ ansible_facts['distribution_release'] }}-pgdg main
+    filename: pgdg
+    state: present
+
+- name: Install PostgreSQL server, contrib extensions and psycopg2
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgresql_version }}"
+      - "postgresql-contrib-{{ postgresql_version }}"
+      - python3-psycopg2
+    state: present
+    update_cache: true
+
+- name: Ensure include_dir in main postgresql.conf
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+    line: "include_dir = 'conf.d'"
+    regexp: "^include_dir\\s*="
+    state: present
+  notify: Restart PostgreSQL
+
+- name: Ensure conf.d exists
+  ansible.builtin.file:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/conf.d"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+
+- name: Deploy PostgreSQL overrides (conf.d)
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/conf.d/99-ansible.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart PostgreSQL
+
+- name: Deploy pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart PostgreSQL
+
+- name: Enable and start PostgreSQL
+  ansible.builtin.service:
+    name: "postgresql@{{ postgresql_version }}-main"
+    state: started
+    enabled: true
+
+- name: Wait for PostgreSQL to be ready
+  ansible.builtin.wait_for:
+    port: "{{ postgresql_port | int }}"
+    host: 127.0.0.1
+    delay: 2
+    timeout: 30
+
+- name: Create __APP_SLUG___prod_user
+  community.general.postgresql_user:
+    name: __APP_SLUG___prod_user
+    password: "{{ postgres___APP_SLUG___prod_password }}"
+    state: present
+  become: true
+  become_user: postgres
+  no_log: true
+
+# >>> staging-only
+- name: Create __APP_SLUG___staging_user
+  community.general.postgresql_user:
+    name: __APP_SLUG___staging_user
+    password: "{{ postgres___APP_SLUG___staging_password }}"
+    state: present
+  become: true
+  become_user: postgres
+  no_log: true
+# <<< staging-only
+
+- name: Create __APP_SLUG___production database
+  community.general.postgresql_db:
+    name: __APP_SLUG___production
+    owner: __APP_SLUG___prod_user
+    state: present
+  become: true
+  become_user: postgres
+
+# >>> staging-only
+- name: Create __APP_SLUG___staging database
+  community.general.postgresql_db:
+    name: __APP_SLUG___staging
+    owner: __APP_SLUG___staging_user
+    state: present
+  become: true
+  become_user: postgres
+# <<< staging-only
+
+- name: Grant ALL on __APP_SLUG___production to __APP_SLUG___prod_user
+  community.general.postgresql_privs:
+    database: __APP_SLUG___production
+    role: __APP_SLUG___prod_user
+    type: database
+    priv: ALL
+    state: present
+  become: true
+  become_user: postgres
+
+# >>> staging-only
+- name: Grant ALL on __APP_SLUG___staging to __APP_SLUG___staging_user
+  community.general.postgresql_privs:
+    database: __APP_SLUG___staging
+    role: __APP_SLUG___staging_user
+    type: database
+    priv: ALL
+    state: present
+  become: true
+  become_user: postgres
+# <<< staging-only
+
+- name: Apply pending PostgreSQL restarts (needed for shared_preload_libraries)
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable required extensions on app databases
+  community.general.postgresql_ext:
+    name: "{{ item.ext }}"
+    db: "{{ item.db }}"
+    state: present
+  become: true
+  become_user: postgres
+  loop:
+    - { ext: pg_stat_statements, db: __APP_SLUG___production }
+# >>> staging-only
+    - { ext: pg_stat_statements, db: __APP_SLUG___staging }
+# <<< staging-only
+    - { ext: pgcrypto, db: __APP_SLUG___production }
+# >>> staging-only
+    - { ext: pgcrypto, db: __APP_SLUG___staging }
+# <<< staging-only
+  loop_control:
+    label: "{{ item.ext }} on {{ item.db }}"
+
+- name: Optional UFW rules for PostgreSQL (localhost + Docker CIDRs only)
+  ansible.builtin.import_tasks: ufw.yml
+  when: postgresql_firewall_ufw_enable | default(true) | bool

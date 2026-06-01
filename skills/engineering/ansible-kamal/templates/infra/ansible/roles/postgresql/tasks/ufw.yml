@@ -1,0 +1,17 @@
+---
+# Extra UFW rules: PostgreSQL only from loopback + Docker CIDRs (layer on top of listen_addresses + pg_hba).
+
+- name: Allow PostgreSQL from loopback
+  community.general.ufw:
+    rule: allow
+    port: "{{ postgresql_port | string }}"
+    proto: tcp
+    from_ip: 127.0.0.0/8
+
+- name: Allow PostgreSQL from discovered Docker CIDRs
+  community.general.ufw:
+    rule: allow
+    port: "{{ postgresql_port | string }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ postgresql_pg_hba_docker_cidrs }}"

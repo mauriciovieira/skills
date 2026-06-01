@@ -1,0 +1,3 @@
+# Install only inside the project venv (see Makefile `make setup`).
+ansible>=10.0.0
+ansible-lint>=25.0.0

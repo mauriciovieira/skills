@@ -1,0 +1,43 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Upgrade all packages
+  ansible.builtin.apt:
+    upgrade: dist
+
+- name: Install basic utilities
+  ansible.builtin.apt:
+    name:
+      - curl
+      - git
+      - ufw
+      - fail2ban
+      - jq
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - apt-transport-https
+      - software-properties-common
+    state: present
+
+# Distro python3 is the supported stack per Ubuntu LTS (e.g. Noble → 3.12). Security updates come from upgrade: dist above.
+- name: Ensure Python 3 and apt bindings for Ansible are installed
+  ansible.builtin.apt:
+    name:
+      - python3
+      - python3-minimal
+      - python3-apt
+    state: present
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Ensure locale is generated
+  ansible.builtin.command:
+    cmd: locale-gen en_US.UTF-8
+  changed_when: true
+  when: ansible_facts['os_family'] == 'Debian'

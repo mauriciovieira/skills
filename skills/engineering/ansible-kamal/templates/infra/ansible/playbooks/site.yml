@@ -1,0 +1,25 @@
+---
+# Main site playbook - provisions fully configured VPS
+# Usage: ansible-playbook -i inventory/production.yml playbooks/site.yml
+# With tags: ansible-playbook -i inventory/production.yml playbooks/site.yml --tags "docker,traefik"
+- name: Provision VPS infrastructure
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: common
+      tags: [common]
+    - role: users
+      tags: [users]
+    - role: fail2ban
+      tags: [fail2ban, security]
+    # Docker before PostgreSQL so bridge/networks exist for listen_addresses + pg_hba discovery
+    - role: docker
+      tags: [docker]
+    - role: postgresql
+      tags: [postgresql, db]
+      when: postgresql_enabled | default(false) | bool
+    - role: traefik
+      tags: [traefik]
+      when: traefik_enabled | default(false) | bool
