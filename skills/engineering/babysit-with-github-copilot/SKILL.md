@@ -51,8 +51,11 @@ schedule the next cycle instead of merging.
    `gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0))] | length'`
    — must be `≥ 1` before any merge. This uses a numeric epoch compare via
    `fromdateiso8601`, **not** a string compare, so it is robust to `Z`/offset/
-   fractional-second formatting differences. (If `<last_push_at>` is empty you
-   are on the initial review, not a re-review; this gate does not apply yet.)
+   fractional-second formatting differences. (With an empty
+   `<last_push_at>` — the initial review, before any fix is pushed — `// 0`
+   treats the watermark as epoch 0, so the gate degrades to "at least one
+   Copilot review must exist". That is the intended initial-review behavior:
+   you still wait for Copilot's first review before merging.)
 
 If you pushed fixes this turn: commit → push → re-request review (Step 2) →
 brief status to user → **ScheduleWakeup** → **stop**. Do not call
