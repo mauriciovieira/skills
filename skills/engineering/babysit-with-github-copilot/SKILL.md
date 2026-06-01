@@ -33,7 +33,7 @@ schedule the next cycle instead of merging.
    An active Action is a stronger signal than silence — the review is in
    flight, not absent. Merging cancels it mid-scan (the `--delete-branch`
    kills the run), and you ship without seeing comments that were about to
-   land. Check via `gh run list --branch <head> --workflow "Running Copilot Code Review" --limit 3` (the workflow is named **"Running Copilot Code Review"**, not "Copilot"; if unsure, `gh run list --branch <head> --limit 6` and match the run whose `name` contains "Copilot")
+   land. Check via `gh run list --branch <head-branch> --workflow "Running Copilot Code Review" --limit 3` (the workflow is named **"Running Copilot Code Review"**, not "Copilot"; if unsure, `gh run list --branch <head-branch> --limit 6` and match the run whose `name` contains "Copilot")
    before every merge. Wait for `status: completed` (any conclusion is fine
    — Copilot may produce comments AND a `completed` run, but a still-running
    run means more comments may still appear).
