@@ -1,6 +1,6 @@
 ---
 name: babysit-with-github-copilot
-description: Babysit a PR through GitHub Copilot review until merge. Use when the user asks to "babysit PR #N", "ship PR #N", "/babysit-with-github-copilot", or after opening a PR they want shepherded to merge. Encodes the open → request review → 5-min wait → fetch comments → address → push → re-request → 1-cycle re-review → merge → cleanup loop.
+description: Babysit a PR through GitHub Copilot review until merge. Use when the user asks to "babysit PR #N", "ship PR #N", "/babysit-with-github-copilot", or after opening a PR they want shepherded to merge. Encodes the open → request review → 5-min wait → fetch comments → address → push → re-request → wait for Copilot's post-push review event → merge → cleanup loop. Never merges on silence: a Copilot review dated after the last push is the hard gate.
 ---
 
 # babysit-with-github-copilot
@@ -33,10 +33,29 @@ schedule the next cycle instead of merging.
    An active Action is a stronger signal than silence — the review is in
    flight, not absent. Merging cancels it mid-scan (the `--delete-branch`
    kills the run), and you ship without seeing comments that were about to
-   land. Check via `gh run list --branch <head> --workflow Copilot --limit 3`
+   land. Check via `gh run list --branch <head-branch> --workflow "Running Copilot Code Review" --limit 3` (the workflow is named **"Running Copilot Code Review"**, not "Copilot"; if unsure, `gh run list --branch <head-branch> --limit 6` and match the run whose `name` contains "Copilot")
    before every merge. Wait for `status: completed` (any conclusion is fine
    — Copilot may produce comments AND a `completed` run, but a still-running
    run means more comments may still appear).
+7. **Never merge until Copilot has posted a *review event* dated after
+   `last_push_at`.** This is the master gate. After a re-request, Copilot
+   always submits a review summary — even "I reviewed your changes and found
+   no new comments" is an explicit review event with its own `submittedAt`.
+   That event, newer than your last push, is what authorises merge. Until it
+   arrives, the absence of comments is **pending review**, not **clean
+   review** — keep waiting (ScheduleWakeup), never merge on silence. A
+   `completed` Copilot Action is necessary but **not sufficient**: the Action
+   can finish seconds before the review summary posts (this exact race has
+   shipped PRs with unaddressed comments). Gate on the review event, not the
+   Action. Check:
+   `gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0))] | length'`
+   — must be `≥ 1` before any merge. This uses a numeric epoch compare via
+   `fromdateiso8601`, **not** a string compare, so it is robust to `Z`/offset/
+   fractional-second formatting differences. (With an empty
+   `<last_push_at>` — the initial review, before any fix is pushed — `// 0`
+   treats the watermark as epoch 0, so the gate degrades to "at least one
+   Copilot review must exist". That is the intended initial-review behavior:
+   you still wait for Copilot's first review before merging.)
 
 If you pushed fixes this turn: commit → push → re-request review (Step 2) →
 brief status to user → **ScheduleWakeup** → **stop**. Do not call
@@ -66,7 +85,10 @@ Persist across wake-ups (in the wakeup prompt or session notes):
 | `awaiting_rereview` | `true` after a fix push until Step 3 completes once post-push |
 
 Reset `awaiting_rereview` to `false` only after a full Step 3 wake-up that
-finds no unaddressed Copilot comments newer than `last_push_at`.
+finds (a) a Copilot review event with `submittedAt > last_push_at` and (b) no
+unaddressed Copilot comments newer than `last_push_at`. The **merge gate** is
+`last_review_at > last_push_at` — a fix push always makes `last_push_at` newer
+than `last_review_at`, so you cannot merge again until Copilot re-reviews.
 
 ## Step 1 — Open the PR (if not already open)
 
@@ -111,21 +133,40 @@ gh pr view <N> --json reviews \
 # blocks merge (see Hard Stop #6). Note: `gh pr checks` can lag and report
 # `pending` for a job that's already completed — verify any "pending" via
 # `gh run view <runId> --json status,conclusion` before treating it as live.
-gh run list --branch <head-branch> --workflow Copilot --limit 3 \
+gh run list --branch <head-branch> --workflow "Running Copilot Code Review" --limit 3 \
   --json status,conclusion,createdAt
+# Workflow name is "Running Copilot Code Review" (NOT "Copilot"). If --workflow
+# returns nothing, run without it and match the run whose name contains Copilot:
+#   gh run list --branch <head-branch> --limit 6 --json status,conclusion,name,createdAt
 ```
 
 Then fetch inline comments newer than the relevant watermark:
 
 ```sh
-# After a fix push, filter against last_push_at; otherwise last_review_at:
-gh api repos/<owner>/<repo>/pulls/<N>/comments \
-  --jq '.[] | select(.created_at > "<ISO watermark>") | {path, line, body, created_at, user: .user.login}'
+# After a fix push, filter against last_push_at; otherwise last_review_at.
+# Numeric epoch compare via fromdateiso8601 (NOT string compare) — same
+# formatting hazard as the gate. `? // 0` makes it resilient: an empty/garbled
+# watermark defaults to epoch 0, so every comment counts as "new" (fail-safe
+# toward catching comments, never toward a premature merge).
+gh api repos/<owner>/<repo>/pulls/<N>/comments | jq --arg w "<ISO watermark>" \
+  '.[] | select((.created_at|fromdateiso8601? // 0) > ($w|fromdateiso8601? // 0)) | {path, line, body, created_at, user: .user.login}'
 ```
 
-Update `last_review_at` from the latest Copilot review. If Copilot left new
-comments after `last_push_at`, they are **unaddressed** until fixed and pushed
-(or replied “won’t fix” with reason).
+Update `last_review_at` from the latest Copilot review. **Compute the merge
+gate explicitly:** is there a Copilot review with `submittedAt > last_push_at`?
+
+```sh
+gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" \
+  '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0))] | length'
+```
+
+Compare timestamps numerically with `fromdateiso8601` (epoch seconds), never as
+strings — `Z` vs `+00:00` or fractional seconds would otherwise sort wrong and
+could reintroduce the merge race. `0` → Copilot has not re-reviewed yet; you may NOT merge this cycle no matter
+how quiet the PR looks (Step 4 #6). `≥ 1` → the post-push review has landed;
+now check whether it carried new comments. If Copilot left new comments after
+`last_push_at`, they are **unaddressed** until fixed and pushed (or replied
+“won’t fix” with reason).
 
 ## Step 4 — Decide
 
@@ -149,12 +190,19 @@ turn.**
    Apply Step 5 on this wake-up only; do not merge on the push turn itself.
 5. **Copilot review Action is `in_progress` or `queued`** → wait one more
    cycle. ScheduleWakeup 270s. Do NOT merge — see Hard Stop #6.
-6. **CI green (or no checks) AND no unaddressed Copilot comments since
-   `last_push_at` (or since `last_review_at` if never pushed) AND no Copilot
-   Action in flight** → merge. Skip to Step 6.
+6. **No Copilot review event dated after `last_push_at` yet** → Copilot has
+   not finished re-reviewing, even if its Action shows `completed` (the
+   summary posts seconds after the Action ends). Wait one more cycle
+   (ScheduleWakeup 270s). Do NOT merge — see Hard Stop #7. If no review event
+   arrives after ~3 consecutive cycles (~15 min), surface to the user and let
+   them decide; never auto-merge on silence.
+7. **CI green (or no checks) AND a Copilot review event exists with
+   `submittedAt > last_push_at` AND that review left no unaddressed comments
+   since `last_push_at` AND no Copilot Action in flight** → merge. Skip to
+   Step 6.
 
-Note: branch **#6** is the only path to merge. Branches **#1**, **#3**, **#5**,
-and the push turn of **#4** all require another Step 3 cycle first.
+Note: branch **#7** is the only path to merge. Branches **#1**, **#3**, **#5**,
+**#6**, and the push turn of **#4** all require another Step 3 cycle first.
 
 ## Step 4a — Reply, resolve, and echo every addressed comment (mandatory)
 
@@ -207,28 +255,40 @@ A comment is not "addressed" until reply + resolve + terminal echo all
 complete. Re-requesting review with unresolved threads is a Step 4 #3
 violation.
 
-## Step 5 — Re-review escape valve (post-fix only)
+## Step 5 — The post-push review gate (post-fix only)
 
 Applies **only when `awaiting_rereview` is true** and Step 3 has completed
 **once** after that push (i.e., you are on a wake-up, not the push turn).
 
-**Pre-check (mandatory):** the Copilot review Action on the head branch
-must be `completed` (any conclusion). If it is `in_progress` or `queued`,
-the escape valve does NOT apply — wait one more cycle (Step 4 #5). Silence
-on the PR while an Action is actively running is not "Copilot has nothing
-to say"; it's "Copilot is still scanning."
+The gate is a **Copilot review event**, not silence and not a finished Action.
+After every fix push you re-request review (Step 2); Copilot responds by
+submitting a review summary — and it does so **even when it has nothing to
+add** ("I reviewed your changes and found no new comments"). That summary is
+an explicit review with its own `submittedAt`. Wait for it.
 
-If Copilot's Action is `completed` AND Copilot has **not** left new comments
-since `last_push_at`, merge anyway (assumes CI is green or absent). Copilot's
-re-review cadence is unreliable; we don't block ship on its silence **after
-we waited one full cycle AND the run is done**.
+**Two mandatory pre-checks before merge:**
 
-If Copilot **did** leave new comments since `last_push_at`, go to Step 4 #3 —
-do not merge.
+1. **Action `completed`** — the Copilot review Action on the head branch must
+   not be `in_progress`/`queued` (Hard Stop #6 / Step 4 #5).
+2. **Review event present** — there must be a review by
+   `copilot-pull-request-reviewer` whose `submittedAt > last_push_at`
+   (Hard Stop #7 / Step 4 #6). A `completed` Action alone does **not** clear
+   this; the summary commonly posts a few seconds *after* the Action ends, and
+   merging in that gap ships unaddressed comments.
 
-This escape valve **never** overrides the hard stops: it does not permit
-merging in the same turn as push, nor skipping Step 3 entirely, nor merging
-with a Copilot Action still in flight (Hard Stop #6).
+Then branch on what that review carried:
+
+- **Review event present, no new inline comments since `last_push_at`** → this
+  is the clean "no new comments" summary. Merge (CI green or absent). Go to
+  Step 6.
+- **Review event present, new inline comments since `last_push_at`** → go to
+  Step 4 #3 (fix round). Do not merge.
+- **No review event yet** → keep waiting (Step 4 #6). Do not merge on silence.
+  After ~3 empty cycles (~15 min), surface to the user; never auto-merge.
+
+This gate **never** overrides the hard stops: it does not permit merging in the
+same turn as push/re-request, nor skipping Step 3, nor merging with a Copilot
+Action still in flight.
 
 ## Step 6 — Merge
 
@@ -281,6 +341,13 @@ before forcing.
 
 ## Notes for the babysit loop
 
+- **Disambiguate the repo with `-R <owner>/<repo>` on every `gh pr ...` / `gh
+  run ...` call** when the local clone has more than one remote (e.g. an
+  `upstream` fork remote). Without `-R`, `gh` may resolve `pr view <N>` /
+  `pr checks <N>` against the *wrong* remote and silently report another
+  repo's PR (stale reviews, wrong head branch) — which can fake-pass or
+  fake-fail the merge gate. The `gh api repos/<owner>/<repo>/...` form is
+  already explicit and safe.
 - Each cycle should send a brief status to the user: round number, # of new
   comments, what you applied, next ETA. One short paragraph, not prose.
 - Use the user's preferred output style if they're in caveman / lite mode.
@@ -301,6 +368,11 @@ before forcing.
   mode; always ScheduleWakeup and stop.
 - **Treating Step 5 as “merge immediately after replies”** — Step 5 requires
   one completed 5-minute cycle after the push.
+- **Merging on Copilot silence before its post-push review summary posts** —
+  the canonical race. A `completed` Action is not the review; Copilot posts
+  its "no new comments" (or its new comments) a few seconds later. Merging in
+  that gap ships unaddressed comments. Gate on the review event
+  (`submittedAt > last_push_at`), never on a quiet PR (Hard Stop #7).
 - Letting CI go untested for >2 cycles without flagging.
 - Merging with a `chore:` review-feedback commit that contains unrelated
   refactors. Keep review-fix commits tightly scoped.

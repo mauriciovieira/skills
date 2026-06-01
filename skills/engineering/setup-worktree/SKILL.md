@@ -11,7 +11,7 @@ Bootstrap a linked git worktree from its main repo without re-installing depende
 
 For each manifest found in the main repo, symlinks the corresponding deps dir into the worktree at the same relative path:
 
-| Manifest | Deps dir candidates (first existing wins) |
+| Manifest | Deps dir candidates (every one that exists in main is linked) |
 |---|---|
 | `package.json` | `node_modules` |
 | `pyproject.toml` / `requirements.txt` / `Pipfile` / `setup.py` | `.venv`, `venv`, `env` |
