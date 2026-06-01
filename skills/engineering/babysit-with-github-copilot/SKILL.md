@@ -33,7 +33,7 @@ schedule the next cycle instead of merging.
    An active Action is a stronger signal than silence — the review is in
    flight, not absent. Merging cancels it mid-scan (the `--delete-branch`
    kills the run), and you ship without seeing comments that were about to
-   land. Check via `gh run list --branch <head> --workflow Copilot --limit 3`
+   land. Check via `gh run list --branch <head> --workflow "Running Copilot Code Review" --limit 3` (the workflow is named **"Running Copilot Code Review"**, not "Copilot"; if unsure, `gh run list --branch <head> --limit 6` and match the run whose `name` contains "Copilot")
    before every merge. Wait for `status: completed` (any conclusion is fine
    — Copilot may produce comments AND a `completed` run, but a still-running
    run means more comments may still appear).
@@ -48,8 +48,11 @@ schedule the next cycle instead of merging.
    can finish seconds before the review summary posts (this exact race has
    shipped PRs with unaddressed comments). Gate on the review event, not the
    Action. Check:
-   `gh pr view <N> --json reviews --jq '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and .submittedAt > "<last_push_at>")] | length'`
-   — must be `≥ 1` before any merge.
+   `gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601) > ($lp|fromdateiso8601))] | length'`
+   — must be `≥ 1` before any merge. This uses a numeric epoch compare via
+   `fromdateiso8601`, **not** a string compare, so it is robust to `Z`/offset/
+   fractional-second formatting differences. (If `<last_push_at>` is empty you
+   are on the initial review, not a re-review; this gate does not apply yet.)
 
 If you pushed fixes this turn: commit → push → re-request review (Step 2) →
 brief status to user → **ScheduleWakeup** → **stop**. Do not call
@@ -127,8 +130,11 @@ gh pr view <N> --json reviews \
 # blocks merge (see Hard Stop #6). Note: `gh pr checks` can lag and report
 # `pending` for a job that's already completed — verify any "pending" via
 # `gh run view <runId> --json status,conclusion` before treating it as live.
-gh run list --branch <head-branch> --workflow Copilot --limit 3 \
+gh run list --branch <head-branch> --workflow "Running Copilot Code Review" --limit 3 \
   --json status,conclusion,createdAt
+# Workflow name is "Running Copilot Code Review" (NOT "Copilot"). If --workflow
+# returns nothing, run without it and match the run whose name contains Copilot:
+#   gh run list --branch <head-branch> --limit 6 --json status,conclusion,name,createdAt
 ```
 
 Then fetch inline comments newer than the relevant watermark:
@@ -143,11 +149,13 @@ Update `last_review_at` from the latest Copilot review. **Compute the merge
 gate explicitly:** is there a Copilot review with `submittedAt > last_push_at`?
 
 ```sh
-gh pr view <N> --json reviews \
-  --jq '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and .submittedAt > "<last_push_at>")] | length'
+gh pr view <N> --json reviews | jq --arg lp "<last_push_at>" \
+  '[.reviews[] | select(.author.login=="copilot-pull-request-reviewer" and (.submittedAt|fromdateiso8601) > ($lp|fromdateiso8601))] | length'
 ```
 
-`0` → Copilot has not re-reviewed yet; you may NOT merge this cycle no matter
+Compare timestamps numerically with `fromdateiso8601` (epoch seconds), never as
+strings — `Z` vs `+00:00` or fractional seconds would otherwise sort wrong and
+could reintroduce the merge race. `0` → Copilot has not re-reviewed yet; you may NOT merge this cycle no matter
 how quiet the PR looks (Step 4 #6). `≥ 1` → the post-push review has landed;
 now check whether it carried new comments. If Copilot left new comments after
 `last_push_at`, they are **unaddressed** until fixed and pushed (or replied
@@ -326,6 +334,13 @@ before forcing.
 
 ## Notes for the babysit loop
 
+- **Disambiguate the repo with `-R <owner>/<repo>` on every `gh pr ...` / `gh
+  run ...` call** when the local clone has more than one remote (e.g. an
+  `upstream` fork remote). Without `-R`, `gh` may resolve `pr view <N>` /
+  `pr checks <N>` against the *wrong* remote and silently report another
+  repo's PR (stale reviews, wrong head branch) — which can fake-pass or
+  fake-fail the merge gate. The `gh api repos/<owner>/<repo>/...` form is
+  already explicit and safe.
 - Each cycle should send a brief status to the user: round number, # of new
   comments, what you applied, next ETA. One short paragraph, not prose.
 - Use the user's preferred output style if they're in caveman / lite mode.
