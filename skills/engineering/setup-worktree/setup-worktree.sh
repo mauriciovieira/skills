@@ -85,7 +85,9 @@ for i in "${!MANIFESTS[@]}"; do
     rel=${rel#/}
     for dep in $candidates; do
       src=$parent/$dep
-      if [ ! -e "$src" ] && [ ! -L "$src" ]; then continue; fi
+      # -e is false for a dangling symlink, so a broken link in main is skipped
+      # rather than reproduced in the worktree (honours "skip missing in main").
+      if [ ! -e "$src" ]; then continue; fi
       if [ -z "$rel" ]; then
         dst=$worktree/$dep
         rel_log=$dep

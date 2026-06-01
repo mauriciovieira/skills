@@ -1,8 +1,8 @@
 ---
 # Global variables for all hosts
 
-# Timezone
-timezone: "America/Sao_Paulo"
+# Timezone — neutral default; override per host/group as needed.
+timezone: "UTC"
 
 # Deploy user configuration
 deploy_user: __DEPLOY_USER__
@@ -20,7 +20,7 @@ sshd_permit_root_login: "no"
 # Default SSH user for playbooks: root (bootstrap + ad-hoc). `make ansible` passes -u $(ANSIBLE_REMOTE_USER)
 # (default: deploy user). sshd is configured only in bootstrap (root); site.yml does not touch /etc/ssh.
 ansible_user: root
-ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+ansible_ssh_common_args: '-o StrictHostKeyChecking=accept-new'
 # Pin interpreter to distro python3 (e.g. 3.12 on Ubuntu 24.04 LTS); avoids discovery warnings when multiple Pythons exist.
 ansible_python_interpreter: /usr/bin/python3
 

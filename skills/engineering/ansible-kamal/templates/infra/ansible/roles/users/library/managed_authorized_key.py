@@ -77,7 +77,10 @@ def main() -> None:
         after = _lines_without_sig(before, present_sig)
         changed = after != before
         if changed and not module.check_mode:
-            _atomic_write(path, after, ent.pw_uid, ent.pw_gid)
+            try:
+                _atomic_write(path, after, ent.pw_uid, ent.pw_gid)
+            except OSError as exc:
+                module.fail_json(msg="Failed to write %s: %s" % (path, to_native(exc)))
         module.exit_json(changed=changed)
 
     for ln in before:

@@ -48,7 +48,14 @@ pass_show "__PASS_NAMESPACE__/deploy_ssh_private_key" >.kamal/deploy_ssh_key
 chmod 600 .kamal/deploy_ssh_key
 
 mkdir -p "$HOME/.ssh"
-ssh-keyscan -H "$VPS_HOST" >>"$HOME/.ssh/known_hosts" 2>/dev/null || true
+# Pin the host key on first connect only. ssh-keyscan trusts whatever key the
+# network presents (MITM risk), so we add it once and print the fingerprint —
+# verify it out-of-band the first time. Skip if already known (no duplicates).
+if ! ssh-keygen -F "$VPS_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1; then
+  echo "Pinning SSH host key for $VPS_HOST — verify this fingerprint out-of-band:" >&2
+  ssh-keyscan -H "$VPS_HOST" 2>/dev/null | tee -a "$HOME/.ssh/known_hosts" \
+    | ssh-keygen -lf - >&2 2>/dev/null || true
+fi
 
 BUILD_COMMIT="$(git rev-parse --short HEAD)"
 
