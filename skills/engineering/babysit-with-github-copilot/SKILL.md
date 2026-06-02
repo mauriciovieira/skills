@@ -174,9 +174,14 @@ review_id=$(printf '%s' "$review" | jq -r '.id? // empty')
 last_review_at=$(printf '%s' "$review" | jq -r '.submitted_at? // empty')
 
 # 2) Read THAT review's own comments (authoritative; no propagation lag).
-#    Emit an explicit count so the gate is unambiguous (0 = clean, ≥1 = fix):
-[ -n "$review_id" ] && gh api repos/<owner>/<repo>/pulls/<N>/reviews/$review_id/comments \
-  --jq '{count: length, comments: [.[] | {path, line, body, user: .user.login}]}'
+#    Always emit an explicit {count, comments} object — including the
+#    no-review case — so the gate output is unambiguous in transcripts/logs:
+if [ -n "$review_id" ]; then
+  gh api repos/<owner>/<repo>/pulls/<N>/reviews/$review_id/comments \
+    --jq '{count: length, comments: [.[] | {path, line, body, user: .user.login}]}'
+else
+  printf '%s\n' '{"count":0,"comments":[],"note":"no post-push review yet — gate closed"}'
+fi
 ```
 
 Interpret:
@@ -190,7 +195,7 @@ Interpret:
 
 > The bot's login differs by endpoint: REST `/reviews` →
 > `copilot-pull-request-reviewer[bot]`, REST `/comments` → `Copilot`,
-> `gh pr view --json reviews` (GraphQL) → `copilot-pull-request-reviewer`.
+> `gh pr view <N> -R <owner>/<repo> --json reviews` (GraphQL) → `copilot-pull-request-reviewer`.
 > Match accordingly. Always compare timestamps numerically with
 > `fromdateiso8601? // 0`, never as strings.
 
