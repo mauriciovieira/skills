@@ -171,8 +171,10 @@ review=$(gh api repos/<owner>/<repo>/pulls/<N>/reviews --paginate \
                     and (.submitted_at|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0)))
        | sort_by(.submitted_at | fromdateiso8601? // 0) | last')
 review_id=$(printf '%s' "$review" | jq -r '.id? // empty')
-# Persist into loop state — the merge gate and wake-up prompt carry it forward:
-last_review_at=$(printf '%s' "$review" | jq -r '.submitted_at? // empty')
+# Persist into loop state ONLY when a post-push review exists — otherwise keep
+# the previously persisted value (overwriting with "" would drift the state and
+# could break the documented last_review_at > last_push_at gate):
+[ -n "$review_id" ] && last_review_at=$(printf '%s' "$review" | jq -r '.submitted_at? // empty')
 
 # 2) Read THAT review's own comments (authoritative; no propagation lag).
 #    Always emit an explicit {count, comments} object — including the
