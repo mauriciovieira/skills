@@ -161,16 +161,17 @@ so there is no lag):
 #    also matches a non-[bot] form. `--paginate` emits ONE array per page, so
 #    `jq -s` (slurp) + `add` concatenates all pages into a single array before
 #    filtering — a bare `jq 'map(...)'` would run per-page and pick the wrong
-#    (or multiple) ids. `sort_by(.submitted_at) | last` makes "newest" explicit.
+#    (or multiple) ids. sort_by parsed epoch (fromdateiso8601), not the raw
+#    string, so "newest" stays correct regardless of timestamp formatting.
 review=$(gh api repos/<owner>/<repo>/pulls/<N>/reviews --paginate \
   | jq -s --arg lp "<last_push_at>" \
       'add
        | map(select((.user.login|startswith("copilot-pull-request-reviewer"))
                     and (.submitted_at|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0)))
-       | sort_by(.submitted_at) | last')
-review_id=$(jq -r '.id // empty' <<<"$review")
+       | sort_by(.submitted_at | fromdateiso8601? // 0) | last')
+review_id=$(printf '%s' "$review" | jq -r '.id // empty')
 # Persist into loop state — the merge gate and wake-up prompt carry it forward:
-last_review_at=$(jq -r '.submitted_at // empty' <<<"$review")
+last_review_at=$(printf '%s' "$review" | jq -r '.submitted_at // empty')
 
 # 2) Read THAT review's own comments (authoritative; no propagation lag).
 #    Emit an explicit count so the gate is unambiguous (0 = clean, ≥1 = fix):
