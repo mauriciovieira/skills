@@ -40,7 +40,8 @@ schedule the next cycle instead of merging.
 7. **Never merge until Copilot has posted a *review event* dated after
    `last_push_at`.** This is the master gate. After a re-request, Copilot
    always submits a review summary — even "I reviewed your changes and found
-   no new comments" is an explicit review event with its own `submittedAt`.
+   no new comments" is an explicit review event with its own `submitted_at`
+   (the REST field the gate uses; GraphQL calls the same value `submittedAt`).
    That event, newer than your last push, is what authorises merge. Until it
    arrives, the absence of comments is **pending review**, not **clean
    review** — keep waiting (ScheduleWakeup), never merge on silence. A
@@ -86,12 +87,12 @@ Persist across wake-ups (in the wakeup prompt or session notes):
 | Field | Meaning |
 |-------|---------|
 | `<N>` | PR number |
-| `last_review_at` | ISO timestamp of the latest Copilot review `submittedAt` |
+| `last_review_at` | ISO timestamp of the latest Copilot review `submitted_at` |
 | `last_push_at` | ISO timestamp of the most recent fix push (empty if none yet) |
 | `awaiting_rereview` | `true` after a fix push until Step 3 completes once post-push |
 
 Reset `awaiting_rereview` to `false` only after a full Step 3 wake-up that
-finds (a) a Copilot review event with `submittedAt > last_push_at` and (b) no
+finds (a) a Copilot review event with `submitted_at > last_push_at` and (b) no
 unaddressed Copilot comments newer than `last_push_at`. The **merge gate** is
 `last_review_at > last_push_at` — a fix push always makes `last_push_at` newer
 than `last_review_at`, so you cannot merge again until Copilot re-reviews.
@@ -296,7 +297,7 @@ The gate is a **Copilot review event**, not silence and not a finished Action.
 After every fix push you re-request review (Step 2); Copilot responds by
 submitting a review summary — and it does so **even when it has nothing to
 add** ("I reviewed your changes and found no new comments"). That summary is
-an explicit review with its own `submittedAt`. Wait for it.
+an explicit review with its own `submitted_at`. Wait for it.
 
 **Three mandatory pre-checks before merge:**
 
@@ -407,7 +408,7 @@ before forcing.
   the canonical race. A `completed` Action is not the review; Copilot posts
   its "no new comments" (or its new comments) a few seconds later. Merging in
   that gap ships unaddressed comments. Gate on the review event
-  (`submittedAt > last_push_at`), never on a quiet PR (Hard Stop #7).
+  (`submitted_at > last_push_at`), never on a quiet PR (Hard Stop #7).
 - Letting CI go untested for >2 cycles without flagging.
 - Merging with a `chore:` review-feedback commit that contains unrelated
   refactors. Keep review-fix commits tightly scoped.
