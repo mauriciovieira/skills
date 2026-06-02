@@ -49,8 +49,9 @@ schedule the next cycle instead of merging.
    shipped PRs with unaddressed comments). Gate on the review event, not the
    Action — and resolve that review's comments through its **own** endpoint,
    not the global comments list (see Hard Stop #8 / Step 3).
-8. **Never read a review's comments from the global `/pulls/<N>/comments` list
-   to decide a merge.** A review event appears on `/pulls/<N>/reviews` a few
+8. **Never read a review's comments from the global
+   `/repos/<owner>/<repo>/pulls/<N>/comments` list to decide a merge.** A review
+   event appears on `/repos/<owner>/<repo>/pulls/<N>/reviews` a few
    seconds **before** its inline comments propagate to the global comments
    list — so the global list can read "0 new comments" while the review you
    just detected actually carries several (this race merged a PR with 4
@@ -146,8 +147,9 @@ gh run list -R <owner>/<repo> --branch <head-branch> --workflow "Running Copilot
 ```
 
 **Compute the merge gate authoritatively.** Do NOT filter the global
-`/pulls/<N>/comments` list by timestamp: a review event becomes visible on
-`/pulls/<N>/reviews` a few seconds **before** its own inline comments propagate
+`/repos/<owner>/<repo>/pulls/<N>/comments` list by timestamp: a review event
+becomes visible on `/repos/<owner>/<repo>/pulls/<N>/reviews` a few seconds
+**before** its own inline comments propagate
 to the global comments list — that race once merged a PR with 4 unaddressed
 comments. Instead, find the post-push review's id, then read **that review's
 own comments** (the per-review endpoint is consistent with the review object,
@@ -163,9 +165,10 @@ review_id=$(gh api repos/<owner>/<repo>/pulls/<N>/reviews --paginate \
                   and (.submitted_at|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0)))
        | last | .id // empty')
 
-# 2) Read THAT review's own comments (authoritative; no propagation lag):
+# 2) Read THAT review's own comments (authoritative; no propagation lag).
+#    Emit an explicit count so the gate is unambiguous (0 = clean, ≥1 = fix):
 [ -n "$review_id" ] && gh api repos/<owner>/<repo>/pulls/<N>/reviews/$review_id/comments \
-  --jq '.[] | {path, line, body, user: .user.login}'
+  --jq '{count: length, comments: [.[] | {path, line, body, user: .user.login}]}'
 ```
 
 Interpret:
@@ -213,9 +216,9 @@ turn.**
    them decide; never auto-merge on silence.
 7. **CI green (or no checks) AND a post-push Copilot review event exists
    (`review_id` non-empty) AND that review's **own** comments endpoint
-   (`/reviews/<id>/comments`) returns **zero** AND no Copilot Action in
-   flight** → merge. Skip to Step 6. (Never substitute the global
-   `/comments` list here — Hard Stop #8.)
+   (`/repos/<owner>/<repo>/pulls/<N>/reviews/<review_id>/comments`) returns
+   **zero** AND no Copilot Action in flight** → merge. Skip to Step 6. (Never
+   substitute the global comments list here — Hard Stop #8.)
 
 Note: branch **#7** is the only path to merge. Branches **#1**, **#3**, **#5**,
 **#6**, and the push turn of **#4** all require another Step 3 cycle first.
@@ -291,8 +294,8 @@ an explicit review with its own `submittedAt`. Wait for it.
    (Hard Stop #7 / Step 4 #6). A `completed` Action alone does **not** clear
    this; the summary commonly posts a few seconds *after* the Action ends.
 3. **That review's own comments are zero** — read
-   `/pulls/<N>/reviews/<review_id>/comments`, never the global comments list
-   (Hard Stop #8). The review event can be visible before its inline comments
+   `/repos/<owner>/<repo>/pulls/<N>/reviews/<review_id>/comments`, never the
+   global comments list (Hard Stop #8). The review event can be visible before its inline comments
    propagate to the global list, so a global "0 new" is not trustworthy.
 
 Then branch on what the **per-review** endpoint returned:
