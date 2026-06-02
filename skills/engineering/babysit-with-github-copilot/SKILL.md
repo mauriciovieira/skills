@@ -169,9 +169,9 @@ review=$(gh api repos/<owner>/<repo>/pulls/<N>/reviews --paginate \
        | map(select((.user.login|startswith("copilot-pull-request-reviewer"))
                     and (.submitted_at|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0)))
        | sort_by(.submitted_at | fromdateiso8601? // 0) | last')
-review_id=$(printf '%s' "$review" | jq -r '.id // empty')
+review_id=$(printf '%s' "$review" | jq -r '.id? // empty')
 # Persist into loop state — the merge gate and wake-up prompt carry it forward:
-last_review_at=$(printf '%s' "$review" | jq -r '.submitted_at // empty')
+last_review_at=$(printf '%s' "$review" | jq -r '.submitted_at? // empty')
 
 # 2) Read THAT review's own comments (authoritative; no propagation lag).
 #    Emit an explicit count so the gate is unambiguous (0 = clean, ≥1 = fix):
