@@ -156,14 +156,21 @@ own comments** (the per-review endpoint is consistent with the review object,
 so there is no lag):
 
 ```sh
-# 1) Numeric id of the newest post-push Copilot review. REST /reviews reports
-#    the bot as "copilot-pull-request-reviewer[bot]" with field submitted_at;
-#    startswith() also matches a non-[bot] form. Epoch compare via fromdateiso8601.
-review_id=$(gh api repos/<owner>/<repo>/pulls/<N>/reviews --paginate \
-  | jq --arg lp "<last_push_at>" \
-      'map(select((.user.login|startswith("copilot-pull-request-reviewer"))
-                  and (.submitted_at|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0)))
-       | last | .id // empty')
+# 1) Newest post-push Copilot review. REST /reviews reports the bot as
+#    "copilot-pull-request-reviewer[bot]" with field submitted_at; startswith()
+#    also matches a non-[bot] form. `--paginate` emits ONE array per page, so
+#    `jq -s` (slurp) + `add` concatenates all pages into a single array before
+#    filtering — a bare `jq 'map(...)'` would run per-page and pick the wrong
+#    (or multiple) ids. `sort_by(.submitted_at) | last` makes "newest" explicit.
+review=$(gh api repos/<owner>/<repo>/pulls/<N>/reviews --paginate \
+  | jq -s --arg lp "<last_push_at>" \
+      'add
+       | map(select((.user.login|startswith("copilot-pull-request-reviewer"))
+                    and (.submitted_at|fromdateiso8601? // 0) > ($lp|fromdateiso8601? // 0)))
+       | sort_by(.submitted_at) | last')
+review_id=$(jq -r '.id // empty' <<<"$review")
+# Persist into loop state — the merge gate and wake-up prompt carry it forward:
+last_review_at=$(jq -r '.submitted_at // empty' <<<"$review")
 
 # 2) Read THAT review's own comments (authoritative; no propagation lag).
 #    Emit an explicit count so the gate is unambiguous (0 = clean, ≥1 = fix):
