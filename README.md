@@ -145,6 +145,7 @@ Skills I use daily for code work.
 - **[ansible-kamal](./skills/engineering/ansible-kamal/SKILL.md)** — Scaffold an Ansible + Kamal 2 infrastructure tree for a Rails app on an Ubuntu VPS (hardened baseline, host PostgreSQL, kamal-proxy on 80/443), with staging+production or single-domain modes.
 - **[babysit-with-github-copilot](./skills/engineering/babysit-with-github-copilot/SKILL.md)** — Drive a PR from open to merged in tight 5-minute cycles around GitHub Copilot review feedback, then clean up the branch/worktree.
 - **[setup-worktree](./skills/engineering/setup-worktree/SKILL.md)** — Bootstrap a linked git worktree from its main repo by symlinking language-agnostic dependency dirs (node_modules, .venv, vendor, target, deps) and copying env files.
+- **[creative-constraints](./skills/engineering/creative-constraints/SKILL.md)** - Roll a machine-random set of binding design constraints before any UI/web design work, so no two sessions converge on the same generic, templated layout.
 
 ### Productivity
 
