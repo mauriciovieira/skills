@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Launch a dedicated Chrome instance for chrome-devtools-mcp, with remote
+# debugging enabled and an isolated profile that persists login state
+# (cookies, local storage) across runs. Log in manually once; subsequent
+# launches reuse the session.
+set -euo pipefail
+
+PORT="__PORT__"
+PROFILE_DIR="$HOME/.chrome-__PROJECT__-profile"
+START_URL="__START_URL__"
+
+CHROME_BIN="${CHROME_BIN:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+
+if [[ ! -x "$CHROME_BIN" ]]; then
+  echo "ERROR: Chrome binary not found at $CHROME_BIN (override with CHROME_BIN=...)" >&2
+  exit 1
+fi
+
+exec "$CHROME_BIN" \
+  --remote-debugging-port="$PORT" \
+  --user-data-dir="$PROFILE_DIR" \
+  --no-first-run \
+  --no-default-browser-check \
+  "$START_URL"

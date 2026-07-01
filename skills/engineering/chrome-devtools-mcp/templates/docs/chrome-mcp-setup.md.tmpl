@@ -1,0 +1,81 @@
+# Chrome DevTools MCP setup - __PROJECT__
+
+Inspect authenticated network traffic in __PROJECT__'s target app via `chrome-devtools-mcp`
+(Google's official CDP MCP server, not Playwright), so real requests/responses can be
+captured and turned into reproducible probe scripts.
+
+## 1. Launch the dedicated Chrome instance
+
+```bash
+scripts/launch-chrome.sh
+```
+
+This opens Chrome with `--remote-debugging-port=__PORT__` and an isolated profile at
+`~/.chrome-__PROJECT__-profile`. The profile persists cookies/local storage across runs.
+
+## 2. Log in manually (first time only)
+
+Complete username/password/2FA by hand in that Chrome window. Every later launch reuses
+the isolated profile, so it opens already logged in.
+
+## 3. Register the MCP server
+
+Confirm `.mcp.json` at the project root has an entry like:
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "http://localhost:__PORT__"]
+    }
+  }
+}
+```
+
+Restart Claude Code so the tools appear (`list_pages`, `navigate_page`, `get_network_requests`,
+`evaluate_script`, etc).
+
+## 4. Find the right tab and navigate
+
+- `list_pages` - confirm which open tab is the target app.
+- `navigate_page` - go to the feature you want to inspect, if not already there.
+
+## 5. Capture requests
+
+Call `get_network_requests` filtered by the target domain while exercising the feature.
+For each interesting request, record:
+
+- Method and full URL (including query string).
+- Sensitive headers: `Authorization`, `Cookie`, `X-CSRF-Token`, and any other custom auth header.
+- Request body.
+- Response shape (status, key fields, pagination hints).
+
+## 6. Turn a captured request into a probe script
+
+For every request worth reproducing, write a minimal `scripts/probe/<name>.mjs` using plain
+`fetch` with the same headers, to confirm it works without the browser before wrapping it as
+an MCP tool under `src/`:
+
+```js
+const res = await fetch("https://api.example.com/some/endpoint", {
+  method: "GET",
+  headers: {
+    Authorization: process.env.PROBE_AUTH_HEADER,
+    Cookie: process.env.PROBE_COOKIE,
+  },
+});
+console.log(res.status, await res.json());
+```
+
+Read captured secrets from environment variables or a local, gitignored file - never
+hardcode them into the probe script.
+
+## Security notes
+
+- The CDP port (`__PORT__`) has no authentication of its own. It is safe only because it
+  binds to localhost - never expose it via a tunnel or forward it to a public interface.
+- `~/.chrome-__PROJECT__-profile` holds real session cookies. It lives outside the repo;
+  never commit it, and never sync it through Dropbox/iCloud/etc.
+- No token, cookie, or captured response body may enter the repo - not in probe scripts,
+  not in commit messages, not in this doc.
