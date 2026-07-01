@@ -24,7 +24,7 @@ Scaffolds the setup needed to inspect authenticated network traffic through
 
 **Do NOT use** when the target API is already documented, or when an existing
 `scripts/launch-chrome.sh` / `docs/chrome-mcp-setup.md` is present for this project - diff
-manually instead, this skill overwrites unless `FORCE=1`.
+manually instead, this skill refuses to overwrite unless `FORCE=1`.
 
 ## Inputs to ask the user (in this order)
 
@@ -74,7 +74,7 @@ Then tell the user to restart Claude Code so the tools (`list_pages`, `navigate_
 
 Tell the user, in order:
 
-1. `scripts/launch-chrome.sh` - opens the dedicated Chrome instance.
+1. `./scripts/launch-chrome.sh` - opens the dedicated Chrome instance.
 2. Log in manually (user/password/2FA) once in that window; the isolated profile keeps it
    logged in on later launches.
 3. Restart Claude Code to pick up the new MCP server.
