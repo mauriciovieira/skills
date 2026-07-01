@@ -47,13 +47,30 @@ if [[ "$FORCE" != "1" ]]; then
   done
 fi
 
+# Escape a value for use as a sed replacement: backslash first (so later
+# escapes aren't double-escaped), then & (sed expands unescaped & to the
+# matched text). Pure bash substitution, so this never needs its own escaping.
+escape_repl() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//&/\\&}
+  printf '%s' "$s"
+}
+
 render() {
   local src="$1" dst="$2"
   mkdir -p "$(dirname "$dst")"
+  # Delimiter is \x01 (unlikely in PROJECT/PORT/START_URL), not / or #, so a
+  # URL or slug containing either can't break the sed command.
+  local d=$'\x01'
+  local project_esc port_esc url_esc
+  project_esc=$(escape_repl "$PROJECT")
+  port_esc=$(escape_repl "$PORT")
+  url_esc=$(escape_repl "$START_URL")
   sed \
-    -e "s/__PROJECT__/$PROJECT/g" \
-    -e "s/__PORT__/$PORT/g" \
-    -e "s#__START_URL__#$START_URL#g" \
+    -e "s${d}__PROJECT__${d}${project_esc}${d}g" \
+    -e "s${d}__PORT__${d}${port_esc}${d}g" \
+    -e "s${d}__START_URL__${d}${url_esc}${d}g" \
     "$src" > "$dst"
 }
 

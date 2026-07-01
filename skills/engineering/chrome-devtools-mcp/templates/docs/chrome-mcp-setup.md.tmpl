@@ -73,8 +73,9 @@ hardcode them into the probe script.
 
 ## Security notes
 
-- The CDP port (`__PORT__`) has no authentication of its own. It is safe only because it
-  binds to localhost - never expose it via a tunnel or forward it to a public interface.
+- The CDP port (`__PORT__`) has no authentication of its own. `launch-chrome.sh` binds it
+  explicitly with `--remote-debugging-address=127.0.0.1` - never expose it via a tunnel or
+  forward it to a public interface.
 - `~/.chrome-__PROJECT__-profile` holds real session cookies. It lives outside the repo;
   never commit it, and never sync it through Dropbox/iCloud/etc.
 - No token, cookie, or captured response body may enter the repo - not in probe scripts,

@@ -9,15 +9,33 @@ PORT="__PORT__"
 PROFILE_DIR="$HOME/.chrome-__PROJECT__-profile"
 START_URL="__START_URL__"
 
-CHROME_BIN="${CHROME_BIN:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+# Resolve a default binary across platforms: the standard macOS app bundle
+# path first, then common Linux binary names on PATH.
+default_chrome_bin() {
+  local mac_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  if [[ -x "$mac_path" ]]; then
+    printf '%s' "$mac_path"
+    return
+  fi
+  local bin
+  for bin in google-chrome google-chrome-stable chromium chromium-browser; do
+    if command -v "$bin" >/dev/null 2>&1; then
+      command -v "$bin"
+      return
+    fi
+  done
+}
 
-if [[ ! -x "$CHROME_BIN" ]]; then
-  echo "ERROR: Chrome binary not found at $CHROME_BIN (override with CHROME_BIN=...)" >&2
+CHROME_BIN="${CHROME_BIN:-$(default_chrome_bin)}"
+
+if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then
+  echo "ERROR: Chrome/Chromium binary not found (override with CHROME_BIN=...)" >&2
   exit 1
 fi
 
 exec "$CHROME_BIN" \
   --remote-debugging-port="$PORT" \
+  --remote-debugging-address=127.0.0.1 \
   --user-data-dir="$PROFILE_DIR" \
   --no-first-run \
   --no-default-browser-check \
