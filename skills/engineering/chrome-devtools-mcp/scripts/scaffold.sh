@@ -30,6 +30,11 @@ require PROJECT
 require PORT
 require START_URL
 
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
+  echo "ERROR: PORT must be a number between 1 and 65535, got: $PORT" >&2
+  exit 2
+fi
+
 TARGET_DIR="${TARGET_DIR:-.}"
 FORCE="${FORCE:-0}"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -67,11 +72,21 @@ render() {
   project_esc=$(escape_repl "$PROJECT")
   port_esc=$(escape_repl "$PORT")
   url_esc=$(escape_repl "$START_URL")
+  # Render to a temp file first and mv into place, so a failed sed (bad
+  # template path, permission error) can never leave a truncated/empty file
+  # at $dst.
+  local tmp
+  tmp=$(mktemp "${dst}.XXXXXX")
+  # mktemp creates the file 0600; restore the usual umask-default readable
+  # mode before it replaces $dst; a later chmod +x (for the launch script)
+  # applies on top of this, not on top of mktemp's restrictive mode.
+  chmod 644 "$tmp"
   sed \
     -e "s${d}__PROJECT__${d}${project_esc}${d}g" \
     -e "s${d}__PORT__${d}${port_esc}${d}g" \
     -e "s${d}__START_URL__${d}${url_esc}${d}g" \
-    "$src" > "$dst"
+    "$src" > "$tmp"
+  mv "$tmp" "$dst"
 }
 
 render "$SKILL_DIR/templates/scripts/launch-chrome.sh.tmpl" "$dst_script"
