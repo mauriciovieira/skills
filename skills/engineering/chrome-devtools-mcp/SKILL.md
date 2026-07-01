@@ -12,8 +12,8 @@ Scaffolds the setup needed to inspect authenticated network traffic through
   and an isolated `--user-data-dir` profile that persists login state across runs.
 - `docs/chrome-mcp-setup.md` - the usage flow: launch, log in once, register the MCP server,
   capture requests, turn them into probe scripts.
-- `scripts/probe/` - empty dir where each captured request later becomes a minimal
-  `fetch`-based reproduction script.
+- `scripts/probe/` - dir (with a `.gitkeep`) where each captured request later becomes a
+  minimal `fetch`-based reproduction script.
 
 ## When to use
 
@@ -61,7 +61,7 @@ Edit (or create) `.mcp.json` at the project root directly - merge into any exist
   "mcpServers": {
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "http://localhost:9222"]
+      "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "http://127.0.0.1:9222"]
     }
   }
 }
