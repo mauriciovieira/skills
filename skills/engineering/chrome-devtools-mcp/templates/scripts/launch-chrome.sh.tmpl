@@ -9,6 +9,14 @@ PORT="__PORT__"
 PROFILE_DIR="$HOME/.chrome-__PROJECT__-profile"
 START_URL="__START_URL__"
 
+# START_URL becomes the final argv to Chrome below. A value starting with
+# "-" would be parsed as a switch instead of a URL, letting it override
+# earlier flags (e.g. --remote-debugging-address). Reject it outright.
+if [[ "$START_URL" == -* ]]; then
+  echo "ERROR: START_URL must not start with '-' (got: $START_URL)" >&2
+  exit 1
+fi
+
 # Resolve a default binary across platforms: the standard macOS app bundle
 # path first, then common Linux binary names on PATH.
 default_chrome_bin() {

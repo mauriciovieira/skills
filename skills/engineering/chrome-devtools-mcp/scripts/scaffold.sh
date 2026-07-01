@@ -30,6 +30,11 @@ require PROJECT
 require PORT
 require START_URL
 
+if ! [[ "$PROJECT" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+  echo "ERROR: PROJECT must be a kebab-case slug (lowercase letters, digits, hyphens), got: $PROJECT" >&2
+  exit 2
+fi
+
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
   echo "ERROR: PORT must be a number between 1 and 65535, got: $PORT" >&2
   exit 2
@@ -77,9 +82,10 @@ render() {
   # at $dst.
   local tmp
   tmp=$(mktemp "${dst}.XXXXXX")
-  # mktemp creates the file 0600; restore the usual umask-default readable
-  # mode before it replaces $dst; a later chmod +x (for the launch script)
-  # applies on top of this, not on top of mktemp's restrictive mode.
+  # mktemp creates the file 0600; force the usual 644 before it replaces
+  # $dst (not umask-derived - a fixed, predictable mode regardless of the
+  # caller's umask). A later chmod +x (for the launch script) applies on
+  # top of this, not on top of mktemp's restrictive mode.
   chmod 644 "$tmp"
   sed \
     -e "s${d}__PROJECT__${d}${project_esc}${d}g" \
