@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Launch a dedicated Chrome instance for chrome-devtools-mcp, with remote
+# debugging enabled and an isolated profile that persists login state
+# (cookies, local storage) across runs. Log in manually once; subsequent
+# launches reuse the session.
+set -euo pipefail
+
+PORT="__PORT__"
+PROFILE_DIR="$HOME/.chrome-__PROJECT__-profile"
+START_URL="__START_URL__"
+
+# START_URL becomes the final argv to Chrome below. A value starting with
+# "-" would be parsed as a switch instead of a URL, letting it override
+# earlier flags (e.g. --remote-debugging-address). Reject it outright.
+if [[ "$START_URL" == -* ]]; then
+  echo "ERROR: START_URL must not start with '-' (got: $START_URL)" >&2
+  exit 1
+fi
+
+# Resolve a default binary across platforms: the standard macOS app bundle
+# path first, then common Linux binary names on PATH.
+default_chrome_bin() {
+  local mac_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  if [[ -x "$mac_path" ]]; then
+    printf '%s' "$mac_path"
+    return 0
+  fi
+  local bin
+  for bin in google-chrome google-chrome-stable chromium chromium-browser; do
+    if command -v "$bin" >/dev/null 2>&1; then
+      command -v "$bin"
+      return 0
+    fi
+  done
+  # Always exit 0: printing nothing here is the "not found" signal, and the
+  # empty-CHROME_BIN check right after the call is what reports the error.
+  # Without this, set -e would abort the script at the assignment itself
+  # (the last command's failing status from the loop above), skipping the
+  # friendly error message entirely.
+  return 0
+}
+
+CHROME_BIN="${CHROME_BIN:-$(default_chrome_bin)}"
+
+if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then
+  echo "ERROR: Chrome/Chromium binary not found (override with CHROME_BIN=...)" >&2
+  exit 1
+fi
+
+exec "$CHROME_BIN" \
+  --remote-debugging-port="$PORT" \
+  --remote-debugging-address=127.0.0.1 \
+  --user-data-dir="$PROFILE_DIR" \
+  --no-first-run \
+  --no-default-browser-check \
+  "$START_URL"
