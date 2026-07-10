@@ -2,8 +2,6 @@
   "name": "mauriciovieira-skills",
   "skills": [
     "./skills/engineering/diagnose",
-    "./skills/engineering/triage",
-    "./skills/engineering/improve-codebase-architecture",
     "./skills/engineering/setup-mauricio-vieira-skills",
     "./skills/engineering/tdd",
     "./skills/engineering/zoom-out",
