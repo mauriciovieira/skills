@@ -69,7 +69,7 @@ This concision pays off session after session.
 
 </details>
 
-This is built into [`/improve-codebase-architecture`](./skills/engineering/improve-codebase-architecture/SKILL.md). As it walks you through a deepening candidate, it keeps `CONTEXT.md` sharpened with the terminology you settle on, and documents hard-to-explain decisions in ADR's.
+This is built into [`/improve-codebase-architecture`](./skills/engineering/improve-codebase-architecture/SKILL.md). As it walks you through a deepening candidate, it keeps `CONTEXT.md` sharpened with the terminology you settle on, and documents hard-to-explain decisions in ADRs.
 
 It's hard to explain how powerful this is. It might be the single coolest technique in this repo. Try it, and see.
 
