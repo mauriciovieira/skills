@@ -1,6 +1,6 @@
 ---
 name: setup-mauricio-vieira-skills
-description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` so the engineering skills know this repo's issue tracker (GitHub or local markdown), triage label vocabulary, and domain doc layout. Run before first use of `diagnose`, `tdd`, or `zoom-out` — or if those skills appear to be missing context about the issue tracker, triage labels, or domain docs.
+description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` recording this repo's issue tracker, triage label vocabulary, and domain doc layout - the issue tracker and triage labels are optional bookkeeping (not read by any shipped skill; mainly documentation or groundwork interop), but domain docs are what `diagnose`, `tdd`, and `zoom-out` actually read. Run before first use of those three, or if they appear to be missing domain-doc context.
 disable-model-invocation: true
 ---
 
@@ -44,7 +44,7 @@ Default posture: these skills were designed for GitHub. If a `git remote` points
 - **Local markdown** — issues live as files under `.scratch/<feature>/` in this repo (good for solo projects or repos without a remote)
 - **Other** (Jira, Linear, etc.) — ask the user to describe the workflow in one paragraph; the skill will record it as freeform prose
 
-**Section B — Triage label vocabulary.** Optional - none of this repo's remaining engineering skills read it. Only relevant if you also use [groundwork](https://github.com/mauriciovieira/groundwork)'s `/groundwork:triage` and want this repo's label vocabulary recorded in one place too.
+**Section B — Triage label vocabulary.** Optional - not consumed by this repo's shipped skills. Mainly useful for documenting your tracker's label vocabulary in one place, or for interop if you also use [groundwork](https://github.com/mauriciovieira/groundwork)'s `/groundwork:triage`.
 
 > Explainer: A triage workflow moves an incoming issue through a state machine — needs evaluation, waiting on reporter, ready for an AFK agent to pick up, ready for a human, or won't fix. To do that, it needs to apply labels (or the equivalent in your issue tracker) that match strings *you've actually configured*. If your repo already uses different label names (e.g. `bug:triage` instead of `needs-triage`), map them here instead of creating duplicates.
 
