@@ -220,6 +220,15 @@ jobs:
           set -euo pipefail
 
           NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+
+          # Guards a manual re-run after this step failed on a prior attempt
+          # (main/tag already pushed): skip instead of erroring on an
+          # already-taken tag, so re-running doesn't need manual cleanup first.
+          if gh release view "v${NEW_VERSION}" > /dev/null 2>&1; then
+            echo "Release v${NEW_VERSION} already exists, skipping."
+            exit 0
+          fi
+
           gh release create "v${NEW_VERSION}" \
             --title "v${NEW_VERSION}" \
             --notes-file /tmp/changelog-entry.md
