@@ -57,6 +57,10 @@ jobs:
 
           BUMP_TYPE="${{ steps.bumptype.outputs.type }}"
           CURRENT_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::.claude-plugin/plugin.json has no valid MAJOR.MINOR.PATCH version (got: '$CURRENT_VERSION')"
+            exit 1
+          fi
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
           case "$BUMP_TYPE" in
             major) NEW_VERSION="$((MAJOR + 1)).0.0" ;;
