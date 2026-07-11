@@ -128,6 +128,14 @@ jobs:
             esac
           done < <(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits" --paginate --jq '.[] | select((.parents | length) < 2) | .commit.message | split("\n")[0]')
 
+          # A PR made up entirely of merge commits (filtered out above) would
+          # otherwise leave every section empty, producing a header with no
+          # bullets. Fall back to a bare PR-link bullet so every release note
+          # entry has at least one line.
+          if [ -z "$FEATURES" ] && [ -z "$FIXES" ] && [ -z "$OTHER" ]; then
+            OTHER="- ${PR_LINK}"$'\n'
+          fi
+
           {
             echo "## [${{ steps.bump.outputs.new_version }}] - $(date -u +%Y-%m-%d)"
             echo
