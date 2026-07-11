@@ -20,7 +20,7 @@ npx skills@latest add mauriciovieira/skills
 
 3. Run `/setup-mauricio-vieira-skills` in your agent. It will:
    - Ask you which issue tracker you want to use (GitHub, GitLab, local markdown, or another workflow you describe)
-   - Ask you what labels you apply to tickets when you triage them (`/triage` uses labels)
+   - Ask you what labels you apply to tickets when you triage them (optional - only relevant if you also use groundwork's `/groundwork:triage`)
    - Ask you where you want to save any docs we create
 
 4. Bam - you're ready to go.
@@ -39,7 +39,7 @@ I built these skills as a way to fix common failure modes I see with Claude Code
 
 This is just the same in the AI age. There is a communication gap between you and the agent. The fix for this is a **grilling session** - getting the agent to ask you detailed questions about what you're building.
 
-**The Fix** is baked into the skills that need it: [`/triage`](./skills/engineering/triage/SKILL.md) grills out under-specified issues before they reach an agent, and [`/improve-codebase-architecture`](./skills/engineering/improve-codebase-architecture/SKILL.md) grills through a chosen refactor candidate before touching code.
+**The Fix** now lives in [groundwork](https://github.com/mauriciovieira/groundwork), my spec-driven-development framework: `/groundwork:triage` grills out under-specified issues before they reach an agent, and `/groundwork:improve-codebase-architecture` grills through a chosen refactor candidate before touching code.
 
 Use them _every_ time you want to align with the agent before making a change.
 
@@ -69,7 +69,7 @@ This concision pays off session after session.
 
 </details>
 
-This is built into [`/improve-codebase-architecture`](./skills/engineering/improve-codebase-architecture/SKILL.md). As it walks you through a deepening candidate, it keeps `CONTEXT.md` sharpened with the terminology you settle on, and documents hard-to-explain decisions in ADRs.
+This is built into groundwork's [`/groundwork:improve-codebase-architecture`](https://github.com/mauriciovieira/groundwork). As it walks you through a deepening candidate, it keeps a project glossary sharpened with the terminology you settle on, and documents hard-to-explain decisions as ADRs.
 
 It's hard to explain how powerful this is. It might be the single coolest technique in this repo. Try it, and see.
 
@@ -116,7 +116,7 @@ This is built in to every layer of these skills:
 
 - [`/zoom-out`](./skills/engineering/zoom-out/SKILL.md) tells the agent to explain code in the context of the whole system
 
-And crucially, [`/improve-codebase-architecture`](./skills/engineering/improve-codebase-architecture/SKILL.md) helps you rescue a codebase that has become a ball of mud. I recommend running it on your codebase once every few days.
+And crucially, groundwork's [`/groundwork:improve-codebase-architecture`](https://github.com/mauriciovieira/groundwork) helps you rescue a codebase that has become a ball of mud. I recommend running it on your codebase once every few days.
 
 ### Summary
 
@@ -132,9 +132,7 @@ Skills I use daily for code work.
 > The software-engineering skills in this bucket are gradually migrating to [groundwork](https://github.com/mauriciovieira/groundwork), my spec-driven-development framework. Expect this bucket to shrink over time as skills move there.
 
 - **[diagnose](./skills/engineering/diagnose/SKILL.md)** — Disciplined diagnosis loop for hard bugs and performance regressions: reproduce → minimise → hypothesise → instrument → fix → regression-test.
-- **[triage](./skills/engineering/triage/SKILL.md)** — Triage issues through a state machine of triage roles.
-- **[improve-codebase-architecture](./skills/engineering/improve-codebase-architecture/SKILL.md)** — Find deepening opportunities in a codebase, informed by the domain language in `CONTEXT.md` and the decisions in `docs/adr/`.
-- **[setup-mauricio-vieira-skills](./skills/engineering/setup-mauricio-vieira-skills/SKILL.md)** — Scaffold the per-repo config (issue tracker, triage label vocabulary, domain doc layout) that the other engineering skills consume. Run once per repo before using `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out`.
+- **[setup-mauricio-vieira-skills](./skills/engineering/setup-mauricio-vieira-skills/SKILL.md)** — Scaffold the per-repo config (issue tracker, triage label vocabulary, domain doc layout) that the other engineering skills consume. Run once per repo before using `diagnose`, `tdd`, or `zoom-out`.
 - **[tdd](./skills/engineering/tdd/SKILL.md)** — Test-driven development with a red-green-refactor loop. Builds features or fixes bugs one vertical slice at a time.
 - **[zoom-out](./skills/engineering/zoom-out/SKILL.md)** — Tell the agent to zoom out and give broader context or a higher-level perspective on an unfamiliar section of code.
 - **[prototype](./skills/engineering/prototype/SKILL.md)** — Build a throwaway prototype to flesh out a design — either a runnable terminal app for state/business-logic questions, or several radically different UI variations toggleable from one route.
