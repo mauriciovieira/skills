@@ -33,11 +33,11 @@ Summarise what's present and what's missing. Then walk the user through the thre
 
 Assume the user does not know what these terms mean. Each section starts with a short explainer (what it is, why these skills need it, what changes if they pick differently). Then show the choices and the default.
 
-**Section A — Issue tracker.**
+**Section A — Issue tracker.** Optional - not consumed by this repo's shipped skills. Mainly useful for documenting where this repo tracks work, or for interop if you also use [groundwork](https://github.com/mauriciovieira/groundwork)'s own tracker config.
 
-> Explainer: The "issue tracker" is where issues live for this repo. This mirrors the config [groundwork](https://github.com/mauriciovieira/groundwork) asks for in its own `/groundwork:setup` (a separate config file - the two aren't shared), so answer the same way if you use both. Pick the place you actually track work for this repo.
+> Explainer: The "issue tracker" is where issues live for this repo. This mirrors the config groundwork asks for in its own `/groundwork:setup` (a separate config file - the two aren't shared), so answer the same way if you use both. Pick the place you actually track work for this repo.
 
-Default posture: these skills were designed for GitHub. If a `git remote` points at GitHub, propose that. If a `git remote` points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
+Default posture: propose GitHub if a `git remote` points there. If a `git remote` points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
 
 - **GitHub** — issues live in the repo's GitHub Issues (uses the `gh` CLI)
 - **GitLab** — issues live in the repo's GitLab Issues (uses the [`glab`](https://gitlab.com/gitlab-org/cli) CLI)
@@ -46,7 +46,7 @@ Default posture: these skills were designed for GitHub. If a `git remote` points
 
 **Section B — Triage label vocabulary.** Optional - not consumed by this repo's shipped skills. Mainly useful for documenting your tracker's label vocabulary in one place, or for interop if you also use [groundwork](https://github.com/mauriciovieira/groundwork)'s `/groundwork:triage`.
 
-> Explainer: A triage workflow moves an incoming issue through a state machine — needs evaluation, waiting on reporter, ready for an AFK agent to pick up, ready for a human, or won't fix. To do that, it needs to apply labels (or the equivalent in your issue tracker) that match strings *you've actually configured*. If your repo already uses different label names (e.g. `bug:triage` instead of `needs-triage`), map them here instead of creating duplicates.
+> Explainer: A triage workflow (e.g. groundwork's `/groundwork:triage`, or your own process) moves an incoming issue through a state machine - needs evaluation, waiting on reporter, ready for an AFK agent to pick up, ready for a human, or won't fix - and applies a label (or the equivalent in your issue tracker) for each state. No skill in this repo applies these labels itself; this section just records the vocabulary in one place, so that whatever *does* apply them (groundwork, or you by hand) matches strings you've actually configured instead of inventing new ones. If your repo already uses different label names (e.g. `bug:triage` instead of `needs-triage`), map them here.
 
 The five canonical roles:
 
