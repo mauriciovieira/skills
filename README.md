@@ -20,7 +20,7 @@ npx skills@latest add mauriciovieira/skills
 
 3. Run `/setup-mauricio-vieira-skills` in your agent. It will:
    - Ask you which issue tracker you want to use (GitHub, GitLab, local markdown, or another workflow you describe)
-   - Ask you what labels you apply to tickets when you triage them
+   - Ask you what labels you apply to tickets when you triage them (optional - only relevant if you also use groundwork's `/groundwork:triage`)
    - Ask you where you want to save any docs we create
 
 4. Bam - you're ready to go.

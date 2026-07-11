@@ -44,7 +44,7 @@ Default posture: these skills were designed for GitHub. If a `git remote` points
 - **Local markdown** — issues live as files under `.scratch/<feature>/` in this repo (good for solo projects or repos without a remote)
 - **Other** (Jira, Linear, etc.) — ask the user to describe the workflow in one paragraph; the skill will record it as freeform prose
 
-**Section B — Triage label vocabulary.**
+**Section B — Triage label vocabulary.** Optional - none of this repo's remaining engineering skills read it. Only relevant if you also use [groundwork](https://github.com/mauriciovieira/groundwork)'s `/groundwork:triage` and want this repo's label vocabulary recorded in one place too.
 
 > Explainer: A triage workflow moves an incoming issue through a state machine — needs evaluation, waiting on reporter, ready for an AFK agent to pick up, ready for a human, or won't fix. To do that, it needs to apply labels (or the equivalent in your issue tracker) that match strings *you've actually configured*. If your repo already uses different label names (e.g. `bug:triage` instead of `needs-triage`), map them here instead of creating duplicates.
 
