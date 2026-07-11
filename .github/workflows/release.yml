@@ -57,15 +57,21 @@ jobs:
 
           BUMP_TYPE="${{ steps.bumptype.outputs.type }}"
           CURRENT_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
-          if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          # Reject leading zeros (e.g. "0.08.0"): besides being invalid
+          # SemVer, a leading-zero segment fed into bash's $(( )) is parsed
+          # as octal, and "08"/"09" aren't valid octal digits.
+          if ! [[ "$CURRENT_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "::error::.claude-plugin/plugin.json has no valid MAJOR.MINOR.PATCH version (got: '$CURRENT_VERSION')"
             exit 1
           fi
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          # 10# forces base-10 arithmetic as a second line of defense against
+          # octal interpretation, even though the regex above already rules
+          # out leading zeros.
           case "$BUMP_TYPE" in
-            major) NEW_VERSION="$((MAJOR + 1)).0.0" ;;
-            minor) NEW_VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
-            *) NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            major) NEW_VERSION="$((10#$MAJOR + 1)).0.0" ;;
+            minor) NEW_VERSION="${MAJOR}.$((10#$MINOR + 1)).0" ;;
+            *) NEW_VERSION="${MAJOR}.${MINOR}.$((10#$PATCH + 1))" ;;
           esac
 
           jq --indent 2 --arg v "$NEW_VERSION" '.version = $v' .claude-plugin/plugin.json > /tmp/plugin.json
