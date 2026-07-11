@@ -102,12 +102,20 @@ jobs:
           # select((.parents | length) < 2) drops merge commits (e.g. from
           # merging main into the branch), same as git log's --no-merges did.
           #
-          # `|| [ -n "$SUBJECT" ]` is required: the jq output has no trailing
-          # newline, and bash's `read` silently drops an unterminated final
-          # line otherwise - which is exactly why a single-commit PR (e.g. a
-          # squash merge) would otherwise produce an empty changelog entry.
-          # SUBJECT is pre-initialized above so the -n test is always well
-          # defined under `set -u`, even on a zero-output range.
+          # Captured into a variable (not read via process substitution):
+          # `set -e` does not reliably catch a failing command inside
+          # `< <(...)`, so a rate-limit/auth/network error from `gh api`
+          # would otherwise be swallowed and silently read as "no commits"
+          # instead of aborting the job. `VAR=$(cmd)` propagates a non-zero
+          # exit to `set -e` like any other command.
+          COMMIT_SUBJECTS=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits" --paginate --jq '.[] | select((.parents | length) < 2) | .commit.message | split("\n")[0]')
+
+          # `|| [ -n "$SUBJECT" ]` is required: a zero-commit range leaves
+          # $COMMIT_SUBJECTS empty, and bash's `read` silently drops an
+          # unterminated final line otherwise - which is exactly why a
+          # single-commit PR (e.g. a squash merge) would otherwise produce an
+          # empty changelog entry. SUBJECT is pre-initialized above so the -n
+          # test is always well defined under `set -u`, even on empty input.
           while IFS= read -r SUBJECT || [ -n "$SUBJECT" ]; do
             [ -z "$SUBJECT" ] && continue
             if [[ "$SUBJECT" =~ $TYPE_REGEX ]]; then
@@ -126,7 +134,7 @@ jobs:
               fix) FIXES="${FIXES}- ${DESC} (${PR_LINK})"$'\n' ;;
               *) OTHER="${OTHER}- ${DESC} (${PR_LINK})"$'\n' ;;
             esac
-          done < <(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits" --paginate --jq '.[] | select((.parents | length) < 2) | .commit.message | split("\n")[0]')
+          done <<< "$COMMIT_SUBJECTS"
 
           # A PR made up entirely of merge commits (filtered out above) would
           # otherwise leave every section empty, producing a header with no
