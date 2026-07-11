@@ -1,5 +1,6 @@
 {
   "name": "mauriciovieira-skills",
+  "version": "0.1.0",
   "skills": [
     "./skills/engineering/diagnose",
     "./skills/engineering/setup-mauricio-vieira-skills",
