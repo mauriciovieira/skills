@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.0] - 2026-08-03
+
+### Added
+
+- sync full skill set from upstream ([#10](https://github.com/mauriciovieira/skills/pull/10))
+
+### Changed
+
+- mirror upstream removal of zoom-out ([#10](https://github.com/mauriciovieira/skills/pull/10))
+
 ## [0.1.1] - 2026-07-11
 
 ### Fixed
