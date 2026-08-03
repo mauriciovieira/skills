@@ -1,6 +1,6 @@
 ---
 name: setup-mauricio-vieira-skills
-description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` recording this repo's issue tracker, triage label vocabulary, and domain doc layout - the issue tracker and triage labels are optional bookkeeping (not read by any shipped skill; mainly documentation or groundwork interop), but domain docs are what `diagnose`, `tdd`, and `zoom-out` actually read. Run before first use of those three, or if they appear to be missing domain-doc context.
+description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` recording this repo's issue tracker, triage label vocabulary, and domain doc layout - the issue tracker is what `triage`, `to-spec`, `to-tickets`, `wayfinder`, and `code-review` read, and domain docs are what `diagnosing-bugs`, `tdd`, and `zoom-out` read. Run once per repo before first use of those skills, or if they appear to be missing tracker or domain-doc context.
 disable-model-invocation: true
 ---
 
@@ -33,9 +33,9 @@ Summarise what's present and what's missing. Then walk the user through the thre
 
 Assume the user does not know what these terms mean. Each section starts with a short explainer (what it is, why these skills need it, what changes if they pick differently). Then show the choices and the default.
 
-**Section A — Issue tracker.** Optional - not consumed by this repo's shipped skills. Mainly useful for documenting where this repo tracks work, or for interop if you also use [groundwork](https://github.com/mauriciovieira/groundwork)'s own tracker config.
+**Section A — Issue tracker.**
 
-> Explainer: The "issue tracker" is where issues live for this repo. This mirrors the config groundwork asks for in its own `/groundwork:setup` (a separate config file - the two aren't shared), so answer the same way if you use both. Pick the place you actually track work for this repo.
+> Explainer: The "issue tracker" is where issues live for this repo. `/triage`, `/to-spec`, `/to-tickets`, `/wayfinder`, and `/code-review` read this doc to know how to publish and fetch work. It also mirrors the config [groundwork](https://github.com/mauriciovieira/groundwork) asks for in its own `/groundwork:setup` (a separate config file - the two aren't shared), so answer the same way if you use both.
 
 Default posture: propose GitHub if a `git remote` points there. If a `git remote` points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
 
@@ -44,9 +44,9 @@ Default posture: propose GitHub if a `git remote` points there. If a `git remote
 - **Local markdown** — issues live as files under `.scratch/<feature>/` in this repo (good for solo projects or repos without a remote)
 - **Other** (Jira, Linear, etc.) — ask the user to describe the workflow in one paragraph; the skill will record it as freeform prose
 
-**Section B — Triage label vocabulary.** Optional - not consumed by this repo's shipped skills. Mainly useful for documenting your tracker's label vocabulary in one place, or for interop if you also use [groundwork](https://github.com/mauriciovieira/groundwork)'s `/groundwork:triage`.
+**Section B — Triage label vocabulary.**
 
-> Explainer: A triage workflow (e.g. groundwork's `/groundwork:triage`, or your own process) moves an incoming issue through a state machine - needs evaluation, waiting on reporter, ready for an AFK agent to pick up, ready for a human, or won't fix - and applies a label (or the equivalent in your issue tracker) for each state. No skill in this repo applies these labels itself; this section just records the vocabulary in one place, so that whatever *does* apply them (groundwork, or you by hand) matches strings you've actually configured instead of inventing new ones. If your repo already uses different label names (e.g. `bug:triage` instead of `needs-triage`), map them here.
+> Explainer: `/triage` moves an incoming issue through a state machine - needs evaluation, waiting on reporter, ready for an AFK agent to pick up, ready for a human, or won't fix - and applies a label (or the equivalent in your issue tracker) for each state. This section records the vocabulary in one place, so that whatever applies them (`/triage`, groundwork's `/groundwork:triage`, or you by hand) matches strings you've actually configured instead of inventing new ones. If your repo already uses different label names (e.g. `bug:triage` instead of `needs-triage`), map them here.
 
 The five canonical roles:
 
@@ -60,7 +60,7 @@ Default: each role's string equals its name. Ask the user if they want to overri
 
 **Section C — Domain docs.**
 
-> Explainer: Some skills (`diagnose`, `tdd`, `zoom-out`) read a `CONTEXT.md` file to learn the project's domain language, and `docs/adr/` for past architectural decisions. They need to know whether the repo has one global context or multiple (e.g. a monorepo with separate frontend/backend contexts) so they look in the right place.
+> Explainer: Some skills (`diagnosing-bugs`, `tdd`, `zoom-out`, `domain-modeling`, `improve-codebase-architecture`) read a `CONTEXT.md` file to learn the project's domain language, and `docs/adr/` for past architectural decisions. They need to know whether the repo has one global context or multiple (e.g. a monorepo with separate frontend/backend contexts) so they look in the right place.
 
 Confirm the layout:
 

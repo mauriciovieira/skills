@@ -4,7 +4,9 @@ Engineering skills depend on per-repo config (issue tracker, triage label vocabu
 
 We split these into **hard-dependency** and **soft-dependency** skills:
 
-- **Hard dependency** (originally `to-issues`, `to-prd`, `triage` - all since moved to [groundwork](https://github.com/mauriciovieira/groundwork), none currently in this repo) — include an explicit one-liner: _"… should have been provided to you — run `/setup-mauricio-vieira-skills` if not."_ Without the mapping, output is wrong, not just fuzzy.
-- **Soft dependency** (`diagnose`, `tdd`, `zoom-out`; `improve-codebase-architecture` also fit this category before it moved to groundwork too) — reference "the project's domain glossary" and "ADRs in the area you're touching" in vague prose only. If the docs aren't there, the skill still works; output is just less sharp.
+- **Hard dependency** (`to-spec`, `to-tickets`, `triage`, `wayfinder`, `code-review`) — include an explicit one-liner: _"… should have been provided to you — run `/setup-mauricio-vieira-skills` if not."_ Without the mapping, output is wrong, not just fuzzy.
+- **Soft dependency** (`diagnosing-bugs`, `tdd`, `zoom-out`, `domain-modeling`, `improve-codebase-architecture`) — reference "the project's domain glossary" and "ADRs in the area you're touching" in vague prose only. If the docs aren't there, the skill still works; output is just less sharp.
+
+The same skills also exist in [groundwork](https://github.com/mauriciovieira/groundwork) under its own setup; that config is separate and not shared with this repo's.
 
 The split keeps soft-dependency skills token-light and avoids cargo-culting the setup pointer into places where it isn't load-bearing.
