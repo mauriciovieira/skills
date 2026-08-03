@@ -1,6 +1,6 @@
 ---
 name: setup-mauricio-vieira-skills
-description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` recording this repo's issue tracker, triage label vocabulary, and domain doc layout - the issue tracker is what `triage`, `to-spec`, `to-tickets`, `wayfinder`, and `code-review` read, and domain docs are what `diagnosing-bugs`, `tdd`, and `zoom-out` read. Run once per repo before first use of those skills, or if they appear to be missing tracker or domain-doc context.
+description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` recording this repo's issue tracker, triage label vocabulary, and domain doc layout - the issue tracker is what `triage`, `to-spec`, `to-tickets`, `wayfinder`, and `code-review` read, and domain docs are what `diagnosing-bugs`, `tdd`, and `domain-modeling` read. Run once per repo before first use of those skills, or if they appear to be missing tracker or domain-doc context.
 disable-model-invocation: true
 ---
 
@@ -60,7 +60,7 @@ Default: each role's string equals its name. Ask the user if they want to overri
 
 **Section C — Domain docs.**
 
-> Explainer: Some skills (`diagnosing-bugs`, `tdd`, `zoom-out`, `domain-modeling`, `improve-codebase-architecture`) read a `CONTEXT.md` file to learn the project's domain language, and `docs/adr/` for past architectural decisions. They need to know whether the repo has one global context or multiple (e.g. a monorepo with separate frontend/backend contexts) so they look in the right place.
+> Explainer: Some skills (`diagnosing-bugs`, `tdd`, `domain-modeling`, `improve-codebase-architecture`) read a `CONTEXT.md` file to learn the project's domain language, and `docs/adr/` for past architectural decisions. They need to know whether the repo has one global context or multiple (e.g. a monorepo with separate frontend/backend contexts) so they look in the right place.
 
 Confirm the layout:
 
