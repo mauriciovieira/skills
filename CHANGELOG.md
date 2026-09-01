@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.1] - 2026-09-01
+
+### Changed
+
+- "Claude PR Assistant workflow" ([#12](https://github.com/mauriciovieira/skills/pull/12))
+- "Claude Code Review workflow" ([#12](https://github.com/mauriciovieira/skills/pull/12))
+
 ## [0.2.0] - 2026-08-03
 
 ### Added
