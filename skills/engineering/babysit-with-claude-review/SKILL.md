@@ -325,10 +325,15 @@ else
             | grep -oE '[0-9]+$' | sort -rn | head -1)
   turns=$(grep -oE '"num_turns": *[0-9]+' "$log" \
           | grep -oE '[0-9]+$' | sort -rn | head -1)
-  if [ "${denials:-0}" -gt 0 ] && [ "${turns:-99}" -le 2 ]; then
+  if [ -z "$denials" ] || [ -z "$turns" ]; then
+    echo "run $run_id: result fields missing from log - gate CLOSED (cannot verify)"
+    # Do NOT default these to a passing value. Missing means the log format
+    # changed (or the log is truncated) and this check is no longer testing
+    # anything. Surface to the user and fix the parser - never merge on it.
+  elif [ "$denials" -gt 0 ] && [ "$turns" -le 2 ]; then
     echo "run $run_id: $denials denials in only $turns turns - blocked, gate CLOSED"
     # Permissions problem, not something a retry fixes. Surface to the user.
-  elif [ "${denials:-0}" -gt 0 ]; then
+  elif [ "$denials" -gt 0 ]; then
     echo "run $run_id: $denials denials but $turns turns - reviewed; FLAG to the user"
   else
     echo "run $run_id genuinely reviewed ($(wc -l < "$log") log lines)"
@@ -358,6 +363,16 @@ reviewed but **flagged to the user**, never swallowed.
 
 `is_error: true` closes the gate on its own; that one is unambiguous and needs
 no threshold.
+
+**Never default a missing field to a passing value.** These fields come from
+the action's result JSON, which is not a stable contract - if `num_turns` is
+renamed upstream, the grep stops matching and a `${turns:-99}` style default
+would silently turn this check into a constant pass, green forever with nothing
+behind it. Absent fields close the gate, same as an unfetchable log: the check
+is not reporting "clean", it is reporting that it can no longer test anything.
+This fails loudly across every PR at once when the format changes, which is the
+point - a gate that wedges the repo gets fixed in minutes, while one that
+degrades to a warning disappears into the noise.
 
 An unreadable log is an **unverifiable** run, and unverifiable is never clean.
 This can wedge a PR for a reason that has nothing to do with its code - that is
