@@ -299,17 +299,35 @@ confirm the run did not skip the review inside itself (Hard Stop #7). A
 `success` run that self-skipped posts zero comments and is indistinguishable
 from a clean one on `conclusion` alone:
 
+**Fetch the log and grep it as two separate operations, and fail closed.**
+Piping `gh run view --log` straight into `grep` collapses "the log says no
+skip" and "the log never arrived" into the same empty output, and the grep then
+reports clean - reopening the exact merge-on-silence hole this check exists to
+plug. Logs go missing for reasons unrelated to the code: GitHub expires them
+after 90 days, and rate limits or network failures hit at any time.
+
 ```sh
-if gh run view "$run_id" -R <owner>/<repo> --log 2>/dev/null \
-     | grep -qiE 'workflow validation failed|skipping action due to workflow'; then
-  echo "run $run_id self-skipped - NOT a review, gate closed"
+log=$(mktemp)
+if ! gh run view "$run_id" -R <owner>/<repo> --log > "$log"; then
+  echo "could not fetch log for run $run_id - gate CLOSED (cannot verify)"
+  # Wait one cycle and retry. After 3 consecutive fetch failures, surface to
+  # the user and let them decide. Never merge on an unverifiable run.
+elif grep -qiE 'workflow validation failed|skipping action due to workflow' "$log"; then
+  echo "run $run_id self-skipped - NOT a review, gate CLOSED"
   # Usual cause: this PR edits the review workflow file, so it no longer
   # matches the default branch. See Step 0. Do NOT merge.
+else
+  echo "run $run_id genuinely reviewed ($(wc -l < "$log") log lines)"
 fi
 ```
 
-Only once that grep is clean, read what the run posted. Two surfaces, both
-needed:
+An unreadable log is an **unverifiable** run, and unverifiable is never clean.
+This can wedge a PR for a reason that has nothing to do with its code - that is
+the intended trade: every ambiguous state in this skill resolves to "wait", and
+escalating to a human beats merging something no one checked.
+
+Only once the run is confirmed genuinely reviewed, read what it posted. Two
+surfaces, both needed:
 
 ```sh
 # Inline review comments. Claude posts one review event per comment, all with
@@ -342,6 +360,9 @@ Interpret:
   Gate closed (Hard Stop #8). Inspect with
   `gh run view $run_id -R <owner>/<repo> --log-failed`, then re-trigger or
   surface to the user.
+- **Run `completed` + `success`, but the log could not be fetched** -> the run
+  is unverifiable. Gate closed. Retry next cycle; after 3 consecutive failures
+  surface to the user. Never merge a run you could not check.
 - **Run `completed` + `success`, but the log grep matched** -> the action
   skipped itself; no review happened. Gate closed (Hard Stop #7). Fix the cause
   - almost always this PR editing the review workflow file - and re-run.
@@ -555,6 +576,9 @@ Removal fails with uncommitted changes - investigate before forcing.
 - **Gating on `annotations_count == 0`.** Clean runs carry unrelated
   annotations - a real one had a single `Node.js 20 is deprecated` warning - so
   this rejects good reviews while proving nothing about whether the review ran.
+- **Piping `gh run view --log` into `grep` in one command.** A failed fetch and
+  a clean log both produce no match, so the check silently passes on exactly
+  the runs it cannot verify. Fetch to a file, test the exit status, then grep.
 - **Gating on `/pulls/<N>/reviews`.** Claude's review events all have empty
   bodies and there is one per inline comment - the endpoint carries no verdict.
 - **Filtering the sticky summary comment by `created_at`.** It is updated in
