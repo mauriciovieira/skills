@@ -318,27 +318,46 @@ elif grep -qiE 'workflow validation failed|skipping action due to workflow' "$lo
 elif grep -q '"is_error": *true' "$log"; then
   echo "run $run_id errored inside the action - NOT a review, gate CLOSED"
 else
-  # The action's result JSON. Echo these every cycle - see below on denials.
+  # The action's result JSON. Echo these every cycle, always.
   grep -oE '"(subtype|is_error|num_turns|permission_denials_count)": *[^,]*' "$log" \
     | tail -4
-  echo "run $run_id genuinely reviewed ($(wc -l < "$log") log lines)"
+  denials=$(grep -oE 'permission_denials_count"?[: ]+[0-9]+' "$log" \
+            | grep -oE '[0-9]+$' | sort -rn | head -1)
+  turns=$(grep -oE '"num_turns": *[0-9]+' "$log" \
+          | grep -oE '[0-9]+$' | sort -rn | head -1)
+  if [ "${denials:-0}" -gt 0 ] && [ "${turns:-99}" -le 2 ]; then
+    echo "run $run_id: $denials denials in only $turns turns - blocked, gate CLOSED"
+    # Permissions problem, not something a retry fixes. Surface to the user.
+  elif [ "${denials:-0}" -gt 0 ]; then
+    echo "run $run_id: $denials denials but $turns turns - reviewed; FLAG to the user"
+  else
+    echo "run $run_id genuinely reviewed ($(wc -l < "$log") log lines)"
+  fi
 fi
 ```
 
-**On `permission_denials_count`: report it, do not auto-gate on it.** A run can
-finish green having been blocked from doing its job - a documented case reviewed
-nothing in 2m49s with `permission_denials_count: 16`. But a nonzero count is
-*not* by itself proof of that: run `33479917884` on `mauriciovieira/skills`
-had `permission_denials_count: 1` alongside `subtype: success`,
-`is_error: false` and `num_turns: 4`, and was a genuine clean review. Gating on
-`> 0` would have wedged that PR for nothing.
+**On `permission_denials_count`: denials alone are not the signal - denials
+*plus* a run that barely did anything are.** A run can finish green having been
+blocked from doing its job: a documented case reviewed nothing in 2m49s with
+`permission_denials_count: 16`. But a nonzero count on its own does not mean
+that. Run `33479917884` on `mauriciovieira/skills` had
+`permission_denials_count: 1` alongside `subtype: success`, `is_error: false`
+and `num_turns: 4`, and was a genuine clean review - gating on `> 0` alone
+would have wedged that PR for nothing.
 
-Two data points do not calibrate a threshold, so this skill does not invent
-one. **Echo the count and surface any nonzero value to the user** with the
-run's `num_turns` beside it - a review blocked out of doing its work shows up
-as denials *and* an implausibly small `num_turns` for the size of the diff.
-Let the human make that call rather than wedging the PR or waving it through.
-`is_error: true` is the part that is unambiguous, and that one closes the gate.
+So the gate closes on **denials `> 0` AND `num_turns <= 2`**: a review stopped
+from working shows up as both at once. Anything else with denials is treated as
+reviewed but **flagged to the user**, never swallowed.
+
+> **The `num_turns <= 2` cutoff is provisional.** It sits below the two
+> confirmed-good runs on this repo (4 and 10 turns) and above a review that did
+> nothing, but it is fitted to a handful of observations, not calibrated. If a
+> real review ever trips it, raise the evidence rather than deleting the check -
+> and if a blocked run ever slips past it, tighten the cutoff. Record what you
+> saw either way.
+
+`is_error: true` closes the gate on its own; that one is unambiguous and needs
+no threshold.
 
 An unreadable log is an **unverifiable** run, and unverifiable is never clean.
 This can wedge a PR for a reason that has nothing to do with its code - that is
@@ -608,8 +627,9 @@ Removal fails with uncommitted changes - investigate before forcing.
 - **Piping `gh run view --log` into `grep` in one command.** A failed fetch and
   a clean log both produce no match, so the check silently passes on exactly
   the runs it cannot verify. Fetch to a file, test the exit status, then grep.
-- **Auto-gating on `permission_denials_count > 0`.** A genuine clean review had
-  exactly one denial. Report the count with `num_turns`, let the human judge.
+- **Gating on `permission_denials_count > 0` alone.** A genuine clean review had
+  exactly one denial. Denials only mean "blocked" alongside a `num_turns` too
+  small to be a real review; otherwise flag them and move on.
 - **Gating on `/pulls/<N>/reviews`.** Claude's review events all have empty
   bodies and there is one per inline comment - the endpoint carries no verdict.
 - **Filtering the sticky summary comment by `created_at`.** It is updated in
