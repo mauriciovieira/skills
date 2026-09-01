@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.2] - 2026-09-01
+
+### Added
+
+- add babysit-with-claude-review ([#11](https://github.com/mauriciovieira/skills/pull/11))
+
+### Fixed
+
+- unbreak the mention-mode gate in babysit-with-claude-review ([#11](https://github.com/mauriciovieira/skills/pull/11))
+- close the PR on an extra run, not on a verdict comment ([#11](https://github.com/mauriciovieira/skills/pull/11))
+- reject review runs that skip themselves ([#11](https://github.com/mauriciovieira/skills/pull/11))
+- fail closed when the review log cannot be read ([#11](https://github.com/mauriciovieira/skills/pull/11))
+
+### Changed
+
+- add Claude Code Review workflow ([#11](https://github.com/mauriciovieira/skills/pull/11))
+
 ## [0.2.1] - 2026-09-01
 
 ### Changed
