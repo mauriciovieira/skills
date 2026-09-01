@@ -36,10 +36,11 @@ copilot-style timestamp watermark on reviews or comments is therefore unusable
 as a gate. The workflow run is the only signal that distinguishes the two, and
 this skill gates on it.
 
-Second consequence: because a clean re-review is invisible, this skill
-**posts the verdict itself** (Step 5) before merging. Without that, a merge
-after a clean re-review is indistinguishable from a merge with no re-review at
-all - which is the exact failure this skill exists to prevent.
+Second consequence: since no review event ever says "clean", the PR is closed
+by an **extra run** rather than by a verdict. After fixing findings you push,
+let the review run again, and merge only if that run requested nothing new
+(Step 5). The trail left on the PR is one reply per finding plus a resolved
+thread (Step 4a) - never a summary comment.
 
 ## Hard stops (read first - violations ship broken PRs)
 
@@ -335,6 +336,12 @@ Branch **#7** is the only path to merge.
 
 ## Step 4a - Reply, resolve, and echo every addressed comment (mandatory)
 
+**Exactly one reply per finding, on that finding's own thread, then resolve it.**
+Never aggregate several findings into one comment, and never substitute a
+single summary comment on the PR for the per-finding replies - the reply has to
+sit on the thread it answers, or the reviewer cannot tell which finding it
+closed.
+
 After pushing the fix commit(s), for **each** comment you addressed (whether
 applied or "won't fix"):
 
@@ -382,30 +389,38 @@ A comment is not "addressed" until reply + resolve + terminal echo all
 complete. Triggering a re-review with unresolved threads is a Step 4 #3
 violation.
 
-## Step 5 - Post the verdict (mandatory before merge)
+## Step 5 - The extra-run gate (post-fix only)
 
-**This step exists because a clean Claude review is invisible.** Merging on a
-silent-but-genuinely-clean re-review is indistinguishable, on the PR, from
-merging with no re-review at all. Leave the evidence:
+Applies whenever you pushed a fix for review feedback, i.e. `awaiting_rereview`
+is `true`. **You may never merge on the same run that produced the findings.**
+Fixing the comments and merging is one round short: the fix itself is
+unreviewed code.
 
-```sh
-gh pr comment <N> -R <owner>/<repo> --body-file <path>
+The closing condition for the PR is therefore an **extra review run, started
+after the fix push, that requested nothing new**:
+
+1. The run exists in GitHub Actions for the current `head_sha` (Step 3's
+   matcher, per `trigger_mode`).
+2. It reached `completed` with conclusion `success` - not `skipped`, not
+   `failure` (Hard Stops #7, #8).
+3. Both comment surfaces return **zero** new comments from `reviewer_login`
+   for that run.
+
+Only all three together close the PR. Two of three is a wait, not a merge.
+
+Echo the gate to the agent terminal before merging, so the transcript shows
+which run authorised it:
+
+```
+gate: run <run_id> (<review_workflow>) on <head_sha> -> completed/success
+      at <run_updated_at>, 0 new comments from <reviewer_login>. CI: <status>.
 ```
 
-Body content:
+Do **not** post this as a PR comment. The PR's audit trail is one reply per
+finding plus a resolved thread (Step 4a) - a summary comment on top of that is
+noise, and on a PR with no findings there is nothing to report.
 
-```
-Re-review clean. Gate: run <run_id> of `<review_workflow>` on `<head_sha>`
-completed `success` at <run_updated_at>, 0 new comments from
-`<reviewer_login>` on either surface. CI: <status>. Merging.
-
-https://github.com/<owner>/<repo>/actions/runs/<run_id>
-```
-
-Also echo it to the agent terminal. Then Step 6.
-
-Skip this step for nothing. "The run was clean and I could see it" is not an
-audit trail the user can read later.
+Then Step 6.
 
 ## Step 6 - Merge
 
@@ -475,8 +490,8 @@ Removal fails with uncommitted changes - investigate before forcing.
   was merged 111 s after the re-review run for the fix commit completed. That
   run was in fact clean - but nothing on the PR said so, so the merge was
   indistinguishable from one with no re-review at all, and the loop itself had
-  no way to tell the two apart. Gate on the run, then post the verdict
-  (Step 5).
+  no way to tell the two apart. Close the PR on an extra run that requested
+  nothing new (Step 5), and echo which run authorised it.
 - **Matching the run by branch instead of head SHA.** A run on the previous
   commit reviewed code you have since changed. Mention-triggered runs also
   report `headBranch: main`, so branch matching is doubly wrong.
@@ -493,6 +508,12 @@ Removal fails with uncommitted changes - investigate before forcing.
 - **Merging while the review run is `in_progress`** - `--delete-branch` cancels
   it and loses the comments it was about to post.
 - **Escalating after 3 quiet cycles.** Runs have taken 13 minutes. Wait ~6.
+- **Merging on the same run that produced the findings.** Fixing the comments
+  and merging leaves the fix itself unreviewed. The PR closes on the *next*
+  run, not the one you are answering (Step 5).
+- **Aggregating replies into one summary comment on the PR.** One reply per
+  finding, on its own thread, then resolve. A summary comment answers nothing
+  and leaves every thread open.
 - Marking a comment "applied" without actually pushing the change.
 - **Merging in the same turn as push or trigger** - always ScheduleWakeup.
 - **Resolving a thread without posting a reply** - loses the audit trail.
@@ -507,4 +528,4 @@ Removal fails with uncommitted changes - investigate before forcing.
 | Phase this turn | Allowed actions | Forbidden |
 |-----------------|-----------------|-----------|
 | Fix round | edit, commit, push, trigger review, reply/resolve comments, status, ScheduleWakeup | `gh pr merge` |
-| Wait wake-up | fetch checks/run/comments, decide Step 4, maybe post verdict + merge (Steps 5/6) | push unless Step 4 #1 or #3 triggered |
+| Wait wake-up | fetch checks/run/comments, decide Step 4, maybe clear the extra-run gate + merge (Steps 5/6) | push unless Step 4 #1 or #3 triggered |
