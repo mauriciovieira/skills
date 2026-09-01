@@ -37,7 +37,7 @@ as a gate. The workflow run is the only signal that distinguishes the two, and
 this skill gates on it.
 
 Second consequence: because a clean re-review is invisible, this skill
-**posts the verdict itself** (Step 6a) before merging. Without that, a merge
+**posts the verdict itself** (Step 5) before merging. Without that, a merge
 after a clean re-review is indistinguishable from a merge with no re-review at
 all - which is the exact failure this skill exists to prevent.
 
@@ -56,9 +56,14 @@ next cycle instead of merging.
 5. **Never merge on silence.** No comments from the reviewer bot is NOT a clean
    review. Only a **`completed` review run whose `headSha` equals the PR's
    current `headRefOid`** authorises merge. This is the master gate.
-6. **Never accept a run whose `headSha` differs from the current head SHA.** A
-   run on the previous commit reviewed code you have since changed. Match the
-   SHA exactly; a branch-name match is not enough.
+6. **Never accept a run that did not review the current head commit.** In auto
+   mode that means `run.headSha == <current headRefOid>` exactly - a run on the
+   previous commit reviewed code you have since changed, and a branch-name
+   match is not enough. In mention mode `run.headSha` is the **default
+   branch's** tip, not the PR head (GitHub runs `issue_comment` workflows
+   against the default branch), so the SHA equality test can never pass; use
+   the mention-mode matcher in Step 3 instead. Never relax the auto-mode test
+   to a branch match to work around this.
 7. **Never count a `skipped` run as a review.** The mention workflow
    (`.github/workflows/claude.yml`, usually named "Claude Code") fires on
    `issue_comment` / `pull_request_review` / `pull_request_review_comment` and
@@ -150,12 +155,19 @@ Persist across wake-ups (in the wakeup prompt or session notes):
 | `reviewer_login` | e.g. `claude[bot]` (from Step 0) |
 | `head_sha` | PR's current `headRefOid` - **the thing the gate matches on** |
 | `review_run_id` | Run id of the review for `head_sha`, once found |
+| `trigger_posted_at` | Mention mode only: `created_at` of the `@claude` comment you last posted |
 | `last_push_at` | ISO timestamp of the most recent fix push (empty if none) |
 | `awaiting_rereview` | `true` after a fix push until Step 3 completes once post-push |
 
 `head_sha` is the watermark, not a timestamp. Every push changes it, which
 invalidates the previous run and closes the gate automatically - no clock
 comparison, no propagation race.
+
+Reset `awaiting_rereview` to `false` only on a wake-up (never on the push turn)
+where Step 3 found a `completed` + `success` review run for the current
+`head_sha` and both comment surfaces returned zero. It is belt-and-braces on
+top of the SHA watermark: the watermark closes the gate, this flag stops you
+merging on the same turn you pushed.
 
 ## Step 1 - Open the PR (if not already open)
 
@@ -183,6 +195,11 @@ appeared after two cycles, fall back to the mention form below.
 ```sh
 gh pr comment <N> -R <owner>/<repo> \
   --body "@claude review the latest commit on this PR"
+
+# Record the trigger watermark - Step 3's mention-mode matcher needs both.
+trigger_posted_at=$(gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
+  | jq -s -r 'add | sort_by(.created_at) | last | .created_at')
+head_sha=$(gh pr view <N> -R <owner>/<repo> --json headRefOid --jq '.headRefOid')
 ```
 
 Notes:
@@ -190,9 +207,11 @@ Notes:
 - A new `@claude` comment is the only way to re-trigger. **Replying inside an
   existing `claude[bot]` review thread does not re-trigger a review** - it only
   spawns a `skipped` run of the mention workflow (Hard Stop #7).
-- Comment-triggered runs report `headBranch: main` (the default branch), not
-  your PR branch. **Never filter these by branch** - filter by workflow and by
-  `createdAt`, then confirm against the PR head SHA.
+- Comment-triggered runs report `headBranch: main` **and `headSha` = the
+  default branch's tip**, not your PR branch or its head commit. Filter them by
+  workflow + `createdAt >= trigger_posted_at`, and assert separately that
+  `headRefOid` has not moved since the trigger. Never filter by branch, and
+  never expect `headSha` to equal the PR head in this mode.
 - Do not request other human reviewers unless the user told you to.
 
 ## Step 3 - The wait cycle (mandatory gate)
@@ -208,13 +227,32 @@ head_sha=$(gh pr view <N> -R <owner>/<repo> --json headRefOid --jq '.headRefOid'
 
 gh pr checks <N> -R <owner>/<repo>          # CI status
 
-# The gate. Match on the REVIEW workflow file and the EXACT head SHA.
-# --workflow takes the file name, which is stable across workflow renames.
-run=$(gh run list -R <owner>/<repo> --workflow "<review_workflow>" --limit 20 \
-        --json databaseId,headSha,status,conclusion,createdAt,updatedAt \
-      | jq --arg sha "$head_sha" \
-          'map(select(.headSha == $sha))
-           | sort_by(.createdAt) | last')
+# The gate. Match on the REVIEW workflow file (--workflow takes the file name,
+# which is stable across workflow renames), then narrow by trigger_mode.
+runs=$(gh run list -R <owner>/<repo> --workflow "<review_workflow>" --limit 20 \
+         --json databaseId,headSha,status,conclusion,createdAt,updatedAt)
+
+case "<trigger_mode>" in
+  auto)
+    # The run reviewed the PR head itself, so match the SHA exactly.
+    run=$(printf '%s' "$runs" | jq --arg sha "$head_sha" \
+            'map(select(.headSha == $sha)) | sort_by(.createdAt) | last') ;;
+  mention)
+    # issue_comment workflows run against the DEFAULT branch, so headSha is
+    # main's tip and can NEVER equal $head_sha - matching on it deadlocks the
+    # loop forever. Match on "started after the trigger comment I posted", and
+    # separately assert the PR head has not moved since the trigger; if it has,
+    # the run reviewed superseded code.
+    if [ "$head_sha" != "<head_sha when trigger was posted>" ]; then
+      echo "head moved since the trigger - gate closed, re-trigger (Step 2)"
+      run=null
+    else
+      run=$(printf '%s' "$runs" | jq --arg t "<trigger_posted_at>" \
+              'map(select((.createdAt|fromdateiso8601? // 0) >= ($t|fromdateiso8601? // 0)))
+               | sort_by(.createdAt) | last')
+    fi ;;
+esac
+
 run_id=$(printf '%s' "$run" | jq -r '.databaseId? // empty')
 run_status=$(printf '%s' "$run" | jq -r '.status? // "none"')
 run_concl=$(printf '%s' "$run" | jq -r '.conclusion? // "none"')
@@ -291,7 +329,7 @@ turn.**
    Re-trigger or surface. Do NOT merge.
 7. **CI green (or no checks) AND a review run exists for the current
    `head_sha` AND it is `completed` with conclusion `success` AND both comment
-   surfaces return zero for that run** -> merge. Go to Step 6a.
+   surfaces return zero for that run** -> merge. Go to Step 5.
 
 Branch **#7** is the only path to merge.
 
@@ -344,7 +382,7 @@ A comment is not "addressed" until reply + resolve + terminal echo all
 complete. Triggering a re-review with unresolved threads is a Step 4 #3
 violation.
 
-## Step 6a - Post the verdict (mandatory before merge)
+## Step 5 - Post the verdict (mandatory before merge)
 
 **This step exists because a clean Claude review is invisible.** Merging on a
 silent-but-genuinely-clean re-review is indistinguishable, on the PR, from
@@ -434,10 +472,11 @@ Removal fails with uncommitted changes - investigate before forcing.
 
 - **Merging on silence.** The canonical failure. Claude posts nothing on a
   clean review, so "no new comments" alone proves nothing. Real case: PR #30
-  was merged 111 s after the fix push; a review run for the fix commit had in
-  fact completed clean, but nothing on the PR said so, and the loop had no way
-  to tell that apart from "never re-reviewed". Gate on the run, then post the
-  verdict (Step 6a).
+  was merged 111 s after the re-review run for the fix commit completed. That
+  run was in fact clean - but nothing on the PR said so, so the merge was
+  indistinguishable from one with no re-review at all, and the loop itself had
+  no way to tell the two apart. Gate on the run, then post the verdict
+  (Step 5).
 - **Matching the run by branch instead of head SHA.** A run on the previous
   commit reviewed code you have since changed. Mention-triggered runs also
   report `headBranch: main`, so branch matching is doubly wrong.
@@ -468,4 +507,4 @@ Removal fails with uncommitted changes - investigate before forcing.
 | Phase this turn | Allowed actions | Forbidden |
 |-----------------|-----------------|-----------|
 | Fix round | edit, commit, push, trigger review, reply/resolve comments, status, ScheduleWakeup | `gh pr merge` |
-| Wait wake-up | fetch checks/run/comments, decide Step 4, maybe post verdict + merge (Step 6a/6) | push unless Step 4 #1 or #3 triggered |
+| Wait wake-up | fetch checks/run/comments, decide Step 4, maybe post verdict + merge (Steps 5/6) | push unless Step 4 #1 or #3 triggered |
