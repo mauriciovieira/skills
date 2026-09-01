@@ -65,14 +65,33 @@ next cycle instead of merging.
    against the default branch), so the SHA equality test can never pass; use
    the mention-mode matcher in Step 3 instead. Never relax the auto-mode test
    to a branch match to work around this.
-7. **Never count a `skipped` run as a review.** The mention workflow
-   (`.github/workflows/claude.yml`, usually named "Claude Code") fires on
-   `issue_comment` / `pull_request_review` / `pull_request_review_comment` and
-   exits `skipped` whenever the trigger phrase is absent. **Your own replies to
-   review threads spawn a burst of these** - on PR #30, ten `skipped` runs in
-   six seconds. They are noise that looks exactly like review activity in
-   `gh run list`. Gate on the **review** workflow only, matched by workflow
-   file path (Step 0), and require `conclusion: success`.
+7. **Never count a run that skipped the review as a review** - whether it
+   skipped at the run level or inside itself.
+   - **Run-level `skipped`.** The mention workflow
+     (`.github/workflows/claude.yml`, usually named "Claude Code") fires on
+     `issue_comment` / `pull_request_review` / `pull_request_review_comment`
+     and exits `skipped` whenever the trigger phrase is absent. **Your own
+     replies to review threads spawn a burst of these** - on PR #30, ten
+     `skipped` runs in six seconds. They are noise that looks exactly like
+     review activity in `gh run list`. Gate on the **review** workflow only,
+     matched by workflow file path (Step 0), and require `conclusion: success`.
+   - **Self-skip inside a `success` run.** The action refuses to review when
+     the workflow file on the PR branch is not byte-identical to the version on
+     the default branch, and it does so as a `##[warning]` in the step - so the
+     **run still reports `completed` + `success`, with zero comments**. That is
+     a merge-on-silence trap that `conclusion` cannot see. Real case, run
+     `33479468831` on `mauriciovieira/skills`:
+     ```
+     completed  success  fc1b82c
+     ##[warning]Skipping action due to workflow validation: Workflow validation
+     failed. The workflow file must exist and have identical content to the
+     version on the repository's default branch.
+     ```
+     Detect it in the log (Step 3). **Do not use `annotations_count`** - a
+     genuinely clean run carries unrelated annotations (a real one had
+     `annotations_count: 1`, purely a `Node.js 20 is deprecated` runner
+     warning), so counting annotations rejects good reviews and is not a test
+     of anything. Grep the log for the marker instead.
 8. **Never count a `failure`, `cancelled`, or `timed_out` run as a review.**
    The review did not happen. Re-trigger (Step 2) or surface to the user - a
    failed run posts no comments, which is indistinguishable from clean.
@@ -131,6 +150,19 @@ gh api repos/<owner>/<repo>/contents/.github/workflows/<file>.yml \
 
 A repo can have both. If the review workflow is auto, prefer it and treat
 mention mode as a manual re-trigger for when a run did not fire.
+
+**If this PR touches the review workflow file itself, it cannot be reviewed.**
+The action requires the file to be byte-identical to the version on the default
+branch and self-skips otherwise - while still reporting `success` (Hard Stop
+#7). Land the workflow change on the default branch first, then rebase or merge
+it into the PR so the two match, and only then expect a review. Check with:
+
+```sh
+git show origin/main:.github/workflows/<file>.yml | git hash-object --stdin
+git hash-object .github/workflows/<file>.yml
+```
+
+Equal hashes, or no review.
 
 **Reviewer login.** Default is `claude[bot]`, but the action posts under a
 different account when the workflow overrides `github_token` (commonly
@@ -263,7 +295,21 @@ printf 'gate: sha=%s run=%s status=%s conclusion=%s\n' \
 ```
 
 Then, **only if** `run_status` is `completed` and `run_concl` is `success`,
-read what that run posted. Two surfaces, both needed:
+confirm the run did not skip the review inside itself (Hard Stop #7). A
+`success` run that self-skipped posts zero comments and is indistinguishable
+from a clean one on `conclusion` alone:
+
+```sh
+if gh run view "$run_id" -R <owner>/<repo> --log 2>/dev/null \
+     | grep -qiE 'workflow validation failed|skipping action due to workflow'; then
+  echo "run $run_id self-skipped - NOT a review, gate closed"
+  # Usual cause: this PR edits the review workflow file, so it no longer
+  # matches the default branch. See Step 0. Do NOT merge.
+fi
+```
+
+Only once that grep is clean, read what the run posted. Two surfaces, both
+needed:
 
 ```sh
 # Inline review comments. Claude posts one review event per comment, all with
@@ -296,9 +342,13 @@ Interpret:
   Gate closed (Hard Stop #8). Inspect with
   `gh run view $run_id -R <owner>/<repo> --log-failed`, then re-trigger or
   surface to the user.
-- **Run `completed` + `success`, zero comments on both surfaces** -> genuinely
-  clean review. Merge-eligible. Claude says nothing when it finds nothing; the
-  successful run on the matching SHA is what makes that meaningful.
+- **Run `completed` + `success`, but the log grep matched** -> the action
+  skipped itself; no review happened. Gate closed (Hard Stop #7). Fix the cause
+  - almost always this PR editing the review workflow file - and re-run.
+- **Run `completed` + `success`, log grep clean, zero comments on both
+  surfaces** -> genuinely clean review. Merge-eligible. Claude says nothing
+  when it finds nothing; the successful, non-self-skipped run on the matching
+  SHA is what makes that meaningful.
 - **Run `completed` + `success`, >= 1 comment** -> unaddressed until fixed and
   pushed (or replied "won't fix" with a reason). Go to Step 4 #3.
 
@@ -499,6 +549,12 @@ Removal fails with uncommitted changes - investigate before forcing.
   bursts. They mean "trigger phrase absent", not "reviewed".
 - **Counting a `failure`/`cancelled` run as clean** because it posted no
   comments. A crashed review posts nothing, exactly like a clean one.
+- **Trusting `conclusion: success` alone.** A run that self-skipped on workflow
+  validation is `completed` + `success` with zero comments. Grep the log
+  (Step 3).
+- **Gating on `annotations_count == 0`.** Clean runs carry unrelated
+  annotations - a real one had a single `Node.js 20 is deprecated` warning - so
+  this rejects good reviews while proving nothing about whether the review ran.
 - **Gating on `/pulls/<N>/reviews`.** Claude's review events all have empty
   bodies and there is one per inline comment - the endpoint carries no verdict.
 - **Filtering the sticky summary comment by `created_at`.** It is updated in
