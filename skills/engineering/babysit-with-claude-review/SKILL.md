@@ -310,21 +310,50 @@ after 90 days, and rate limits or network failures hit at any time.
 log=$(mktemp)
 if ! gh run view "$run_id" -R <owner>/<repo> --log > "$log"; then
   echo "could not fetch log for run $run_id - gate CLOSED (cannot verify)"
-  # Wait one cycle and retry. After 3 consecutive fetch failures, surface to
-  # the user and let them decide. Never merge on an unverifiable run.
+  # Retry next cycle; escalate after 3 consecutive fetch failures (see below).
 elif grep -qiE 'workflow validation failed|skipping action due to workflow' "$log"; then
   echo "run $run_id self-skipped - NOT a review, gate CLOSED"
   # Usual cause: this PR edits the review workflow file, so it no longer
   # matches the default branch. See Step 0. Do NOT merge.
+elif grep -q '"is_error": *true' "$log"; then
+  echo "run $run_id errored inside the action - NOT a review, gate CLOSED"
 else
+  # The action's result JSON. Echo these every cycle - see below on denials.
+  grep -oE '"(subtype|is_error|num_turns|permission_denials_count)": *[^,]*' "$log" \
+    | tail -4
   echo "run $run_id genuinely reviewed ($(wc -l < "$log") log lines)"
 fi
 ```
+
+**On `permission_denials_count`: report it, do not auto-gate on it.** A run can
+finish green having been blocked from doing its job - a documented case reviewed
+nothing in 2m49s with `permission_denials_count: 16`. But a nonzero count is
+*not* by itself proof of that: run `33479917884` on `mauriciovieira/skills`
+had `permission_denials_count: 1` alongside `subtype: success`,
+`is_error: false` and `num_turns: 4`, and was a genuine clean review. Gating on
+`> 0` would have wedged that PR for nothing.
+
+Two data points do not calibrate a threshold, so this skill does not invent
+one. **Echo the count and surface any nonzero value to the user** with the
+run's `num_turns` beside it - a review blocked out of doing its work shows up
+as denials *and* an implausibly small `num_turns` for the size of the diff.
+Let the human make that call rather than wedging the PR or waving it through.
+`is_error: true` is the part that is unambiguous, and that one closes the gate.
 
 An unreadable log is an **unverifiable** run, and unverifiable is never clean.
 This can wedge a PR for a reason that has nothing to do with its code - that is
 the intended trade: every ambiguous state in this skill resolves to "wait", and
 escalating to a human beats merging something no one checked.
+
+**Why 3 fetch failures here, but ~6 cycles in Step 4 #5.** The two waits are
+not the same measurement, and the numbers should not be unified. Step 4 #5
+waits on a run still executing - progress is happening, and runs have been
+observed taking 13 minutes, so escalating at 3 cycles would interrupt normal
+work. This wait is on a *finished* run whose log will not load: that is
+unavailability, not slowness. Rate limits and network blips clear in a cycle or
+two; a log expired past GitHub's 90-day retention never loads at all, and
+retrying it six times changes nothing. Escalate sooner because waiting longer
+buys no new information. Do not "fix" this to 6 for consistency.
 
 Only once the run is confirmed genuinely reviewed, read what it posted. Two
 surfaces, both needed:
@@ -579,6 +608,8 @@ Removal fails with uncommitted changes - investigate before forcing.
 - **Piping `gh run view --log` into `grep` in one command.** A failed fetch and
   a clean log both produce no match, so the check silently passes on exactly
   the runs it cannot verify. Fetch to a file, test the exit status, then grep.
+- **Auto-gating on `permission_denials_count > 0`.** A genuine clean review had
+  exactly one denial. Report the count with `num_turns`, let the human judge.
 - **Gating on `/pulls/<N>/reviews`.** Claude's review events all have empty
   bodies and there is one per inline comment - the endpoint carries no verdict.
 - **Filtering the sticky summary comment by `created_at`.** It is updated in
@@ -587,7 +618,10 @@ Removal fails with uncommitted changes - investigate before forcing.
   `@claude` comment (mention mode) or a new push (auto mode) starts a run.
 - **Merging while the review run is `in_progress`** - `--delete-branch` cancels
   it and loses the comments it was about to post.
-- **Escalating after 3 quiet cycles.** Runs have taken 13 minutes. Wait ~6.
+- **Escalating after 3 quiet cycles while a run is still executing.** Runs have
+  taken 13 minutes. Wait ~6. (This does not apply to the 3-failure limit on
+  fetching a finished run's log - that one measures unavailability, not
+  slowness. See Step 3.)
 - **Merging on the same run that produced the findings.** Fixing the comments
   and merging leaves the fix itself unreviewed. The PR closes on the *next*
   run, not the one you are answering (Step 5).
