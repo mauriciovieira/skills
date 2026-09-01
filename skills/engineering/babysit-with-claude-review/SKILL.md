@@ -327,9 +327,10 @@ else
           | grep -oE '[0-9]+$' | sort -rn | head -1)
   if [ -z "$denials" ] || [ -z "$turns" ]; then
     echo "run $run_id: result fields missing from log - gate CLOSED (cannot verify)"
-    # Do NOT default these to a passing value. Missing means the log format
-    # changed (or the log is truncated) and this check is no longer testing
-    # anything. Surface to the user and fix the parser - never merge on it.
+    # Do NOT default these to a passing value, and do NOT retry: escalate now.
+    # Missing means the log format changed and this check is no longer testing
+    # anything - refetching the same run yields the same gap. Surface to the
+    # user and fix the parser; never merge on it.
   elif [ "$denials" -gt 0 ] && [ "$turns" -le 2 ]; then
     echo "run $run_id: $denials denials in only $turns turns - blocked, gate CLOSED"
     # Permissions problem, not something a retry fixes. Surface to the user.
@@ -373,6 +374,16 @@ is not reporting "clean", it is reporting that it can no longer test anything.
 This fails loudly across every PR at once when the format changes, which is the
 point - a gate that wedges the repo gets fixed in minutes, while one that
 degrades to a warning disappears into the noise.
+
+**Missing fields escalate immediately; a failed log fetch retries 3 times
+first.** The two fail-closed paths differ on purpose. A fetch failure is often
+transient - a rate limit or a network blip clears on the next cycle - so
+retrying can recover it. Absent fields cannot be recovered by retrying: the log
+downloaded fine, and parsing the same bytes again produces the same gap. The
+accepted cost is a truncated log, where the fields are missing for a transient
+reason and one refetch would have worked. That is rare enough to pay for by
+escalating early; the common cause is an upstream rename, which no number of
+retries fixes.
 
 An unreadable log is an **unverifiable** run, and unverifiable is never clean.
 This can wedge a PR for a reason that has nothing to do with its code - that is
