@@ -129,6 +129,7 @@ Software engineering fundamentals matter more than ever. These skills are my bes
 Skills I use daily for code work.
 
 - **[ansible-kamal](./skills/engineering/ansible-kamal/SKILL.md)** — Scaffold an Ansible + Kamal 2 infrastructure tree for a Rails app on an Ubuntu VPS (hardened baseline, host PostgreSQL, kamal-proxy on 80/443), with staging+production or single-domain modes.
+- **[babysit-with-claude-review](./skills/engineering/babysit-with-claude-review/SKILL.md)** - Drive a PR from open to merged around review feedback from Claude running on GitHub, gating the merge on the review workflow run for the exact head SHA because a clean Claude review posts nothing at all.
 - **[babysit-with-github-copilot](./skills/engineering/babysit-with-github-copilot/SKILL.md)** — Drive a PR from open to merged in tight 5-minute cycles around GitHub Copilot review feedback, then clean up the branch/worktree.
 - **[chrome-devtools-mcp](./skills/engineering/chrome-devtools-mcp/SKILL.md)** - Scaffold a dedicated Chrome instance with an isolated login-persisting profile and a chrome-devtools-mcp (CDP) registration, to inspect authenticated network traffic and turn captured requests into reproducible probe scripts.
 - **[code-review](./skills/engineering/code-review/SKILL.md)** — Two-axis review of the diff since a fixed point: **Standards** (does it follow the repo's coding standards, plus a Fowler smell baseline?) and **Spec** (does it faithfully implement the originating issue/PRD?), run as parallel sub-agents.
