@@ -541,7 +541,7 @@ is `true`. **You may never merge on the same run that produced the findings.**
 Fixing the comments and merging is one round short: the fix itself is
 unreviewed code.
 
-The closing condition for the PR is therefore an **extra review run, started
+The merge condition for the PR is therefore an **extra review run, started
 after the fix push, that requested nothing new**:
 
 1. The run exists in GitHub Actions for the current `head_sha` (Step 3's
@@ -551,7 +551,11 @@ after the fix push, that requested nothing new**:
 3. Both comment surfaces return **zero** new comments from `reviewer_login`
    for that run.
 
-Only all three together close the PR. Two of three is a wait, not a merge.
+Only all three together authorise the merge. Two of three is a wait.
+
+> Throughout this skill, **"gate CLOSED" means do NOT merge** - the gate is a
+> barrier, and a closed one blocks. Never read it as "close the PR", which is
+> the opposite outcome.
 
 Echo the gate to the agent terminal before merging, so the transcript shows
 which run authorised it:
