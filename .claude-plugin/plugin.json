@@ -3,6 +3,7 @@
   "version": "0.2.1",
   "skills": [
     "./skills/engineering/ansible-kamal",
+    "./skills/engineering/babysit-with-claude-review",
     "./skills/engineering/babysit-with-github-copilot",
     "./skills/engineering/chrome-devtools-mcp",
     "./skills/engineering/code-review",
