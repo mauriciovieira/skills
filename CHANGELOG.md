@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.3] - 2026-09-02
+
+### Fixed
+
+- surface permission denials, justify the escalation limits ([#13](https://github.com/mauriciovieira/skills/pull/13))
+- close the gate on denials only when the run barely ran ([#13](https://github.com/mauriciovieira/skills/pull/13))
+- missing result fields close the gate, never default to pass ([#13](https://github.com/mauriciovieira/skills/pull/13))
+
+### Changed
+
+- say why missing fields escalate without retrying ([#13](https://github.com/mauriciovieira/skills/pull/13))
+- stop using "close" for both blocking and merging ([#13](https://github.com/mauriciovieira/skills/pull/13))
+- version the run-verdict test with the skill ([#13](https://github.com/mauriciovieira/skills/pull/13))
+
 ## [0.2.2] - 2026-09-01
 
 ### Added
