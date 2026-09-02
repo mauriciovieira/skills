@@ -423,6 +423,9 @@ gh api repos/<owner>/<repo>/pulls/<N>/comments --paginate \
 
 # Sticky summary comment, when the workflow sets use_sticky_comment. It is
 # UPDATED IN PLACE, so filter on updated_at, never created_at.
+#
+# This surface is a VERDICT, not a finding. Its existence decides nothing -
+# read the body. See "Reading the sticky verdict" below.
 gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
   | jq -s --arg login "<reviewer_login>" --arg start "$run_start" \
       'add
@@ -430,6 +433,49 @@ gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
                     and (.updated_at|fromdateiso8601? // 0) >= ($start|fromdateiso8601? // 0)))
        | {count: length, bodies: [.[].body]}'
 ```
+
+### Reading the sticky verdict
+
+The two surfaces mean different things, and counting both the same way is
+wrong. **Inline comments are findings** - one per issue, each on the line it is
+about, and any of them blocks the merge. **The sticky comment is a summary of
+the whole review**, so a clean review produces one too:
+
+```
+## Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+```
+
+That is `count: 1` on the sticky surface and means the opposite of a finding.
+Treating it as unaddressed feedback wedges a PR the reviewer just approved.
+
+So: gate on the **inline** count, and on the sticky **body**.
+
+```sh
+sticky=$(gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
+  | jq -s -r --arg login "<reviewer_login>" --arg start "$run_start" \
+      'add
+       | map(select(.user.login == $login
+                    and (.updated_at|fromdateiso8601? // 0) >= ($start|fromdateiso8601? // 0)))
+       | last | .body // ""')
+
+if [ -z "$sticky" ]; then
+  echo "no sticky verdict this run - inline comments decide"
+elif printf '%s' "$sticky" | grep -qiE 'no issues found|found no issues'; then
+  echo "sticky verdict: clean"
+else
+  echo "sticky verdict NOT recognised as clean - gate CLOSED, read it yourself:"
+  printf '%s\n' "$sticky"
+fi
+```
+
+> **The clean-verdict pattern is provisional.** It matches the only real clean
+> sticky observed (`mauriciovieira/skills#14`). An unrecognised body closes the
+> gate rather than passing, so a reworded verdict costs you a manual read and
+> a pattern update - never a silent merge. Widen it from observed bodies, and
+> never invert it into "assume clean unless it looks bad": that hands every
+> future wording a free pass, which is this skill's core failure mode.
 
 Interpret:
 
@@ -446,12 +492,15 @@ Interpret:
 - **Run `completed` + `success`, but the log grep matched** -> the action
   skipped itself; no review happened. Gate closed (Hard Stop #7). Fix the cause
   - almost always this PR editing the review workflow file - and re-run.
-- **Run `completed` + `success`, log grep clean, zero comments on both
-  surfaces** -> genuinely clean review. Merge-eligible. Claude says nothing
-  when it finds nothing; the successful, non-self-skipped run on the matching
-  SHA is what makes that meaningful.
-- **Run `completed` + `success`, >= 1 comment** -> unaddressed until fixed and
-  pushed (or replied "won't fix" with a reason). Go to Step 4 #3.
+- **Run `completed` + `success`, log grep clean, zero INLINE comments, and the
+  sticky body absent or recognised as clean** -> genuinely clean review.
+  Merge-eligible. The successful, non-self-skipped run on the matching SHA is
+  what makes that meaningful.
+- **Run `completed` + `success`, sticky body present but not recognised as
+  clean** -> gate closed. Read it; it may carry findings the inline surface
+  does not. Do not merge on an unread verdict.
+- **Run `completed` + `success`, >= 1 inline comment** -> unaddressed until
+  fixed and pushed (or replied "won't fix" with a reason). Go to Step 4 #3.
 
 ## Step 4 - Decide
 
