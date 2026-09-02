@@ -1,0 +1,15 @@
+{
+  "name": "mauriciovieira-skills",
+  "owner": {
+    "name": "Mauricio Vieira",
+    "email": "mauricio.vieira@gmail.com"
+  },
+  "description": "Agent skills for real engineering work: code review, TDD, worktrees, domain modeling, and more.",
+  "plugins": [
+    {
+      "name": "mauriciovieira-skills",
+      "source": "./",
+      "description": "Engineering and productivity skills for Claude Code, adapted from Matt Pocock's skills for daily real-world development work."
+    }
+  ]
+}
