@@ -1,0 +1,7 @@
+claude-review	Run Claude Code Review	2026-09-01T06:58:50.9524823Z   "type": "result",
+claude-review	Run Claude Code Review	2026-09-01T06:58:50.9525401Z   "subtype": "success",
+claude-review	Run Claude Code Review	2026-09-01T06:58:50.9525962Z   "is_error": false,
+claude-review	Run Claude Code Review	2026-09-01T06:58:50.9526438Z   "duration_ms": 14896,
+claude-review	Run Claude Code Review	2026-09-01T06:58:50.9526881Z   "num_turns": 4,
+claude-review	Run Claude Code Review	2026-09-01T06:58:50.9527437Z   "total_cost_usd": 0.0881652,
+claude-review	Run Claude Code Review	2026-09-01T06:58:50.9527906Z   "permission_denials_count": 1,

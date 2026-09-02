@@ -365,6 +365,12 @@ reviewed but **flagged to the user**, never swallowed.
 `is_error: true` closes the gate on its own; that one is unambiguous and needs
 no threshold.
 
+This rule has a test: `test/verdict.sh`, run with `bash test/verdict.sh`. It
+covers the four verdicts against trimmed real run logs plus synthetic blocked
+and renamed-field cases, and asserts the branch conditions still appear in this
+file - so editing one without the other fails. **Change the rule above and the
+test together.**
+
 **Never default a missing field to a passing value.** These fields come from
 the action's result JSON, which is not a stable contract - if `num_turns` is
 renamed upstream, the grep stops matching and a `${turns:-99}` style default
