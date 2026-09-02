@@ -310,21 +310,101 @@ after 90 days, and rate limits or network failures hit at any time.
 log=$(mktemp)
 if ! gh run view "$run_id" -R <owner>/<repo> --log > "$log"; then
   echo "could not fetch log for run $run_id - gate CLOSED (cannot verify)"
-  # Wait one cycle and retry. After 3 consecutive fetch failures, surface to
-  # the user and let them decide. Never merge on an unverifiable run.
+  # Retry next cycle; escalate after 3 consecutive fetch failures (see below).
 elif grep -qiE 'workflow validation failed|skipping action due to workflow' "$log"; then
   echo "run $run_id self-skipped - NOT a review, gate CLOSED"
   # Usual cause: this PR edits the review workflow file, so it no longer
   # matches the default branch. See Step 0. Do NOT merge.
+elif grep -q '"is_error": *true' "$log"; then
+  echo "run $run_id errored inside the action - NOT a review, gate CLOSED"
 else
-  echo "run $run_id genuinely reviewed ($(wc -l < "$log") log lines)"
+  # The action's result JSON. Echo these every cycle, always.
+  grep -oE '"(subtype|is_error|num_turns|permission_denials_count)": *[^,]*' "$log" \
+    | tail -4
+  denials=$(grep -oE 'permission_denials_count"?[: ]+[0-9]+' "$log" \
+            | grep -oE '[0-9]+$' | sort -rn | head -1)
+  turns=$(grep -oE '"num_turns": *[0-9]+' "$log" \
+          | grep -oE '[0-9]+$' | sort -rn | head -1)
+  if [ -z "$denials" ] || [ -z "$turns" ]; then
+    echo "run $run_id: result fields missing from log - gate CLOSED (cannot verify)"
+    # Do NOT default these to a passing value, and do NOT retry: escalate now.
+    # Missing means the log format changed and this check is no longer testing
+    # anything - refetching the same run yields the same gap. Surface to the
+    # user and fix the parser; never merge on it.
+  elif [ "$denials" -gt 0 ] && [ "$turns" -le 2 ]; then
+    echo "run $run_id: $denials denials in only $turns turns - blocked, gate CLOSED"
+    # Permissions problem, not something a retry fixes. Surface to the user.
+  elif [ "$denials" -gt 0 ]; then
+    echo "run $run_id: $denials denials but $turns turns - reviewed; FLAG to the user"
+  else
+    echo "run $run_id genuinely reviewed ($(wc -l < "$log") log lines)"
+  fi
 fi
 ```
+
+**On `permission_denials_count`: denials alone are not the signal - denials
+*plus* a run that barely did anything are.** A run can finish green having been
+blocked from doing its job: a documented case reviewed nothing in 2m49s with
+`permission_denials_count: 16`. But a nonzero count on its own does not mean
+that. Run `33479917884` on `mauriciovieira/skills` had
+`permission_denials_count: 1` alongside `subtype: success`, `is_error: false`
+and `num_turns: 4`, and was a genuine clean review - gating on `> 0` alone
+would have wedged that PR for nothing.
+
+So the gate closes on **denials `> 0` AND `num_turns <= 2`**: a review stopped
+from working shows up as both at once. Anything else with denials is treated as
+reviewed but **flagged to the user**, never swallowed.
+
+> **The `num_turns <= 2` cutoff is provisional.** It sits below the two
+> confirmed-good runs on this repo (4 and 10 turns) and above a review that did
+> nothing, but it is fitted to a handful of observations, not calibrated. If a
+> real review ever trips it, raise the evidence rather than deleting the check -
+> and if a blocked run ever slips past it, tighten the cutoff. Record what you
+> saw either way.
+
+`is_error: true` closes the gate on its own; that one is unambiguous and needs
+no threshold.
+
+This rule has a test: `test/verdict.sh`, run with `bash test/verdict.sh`. It
+covers the four verdicts against trimmed real run logs plus synthetic blocked
+and renamed-field cases, and asserts the branch conditions still appear in this
+file - so editing one without the other fails. **Change the rule above and the
+test together.**
+
+**Never default a missing field to a passing value.** These fields come from
+the action's result JSON, which is not a stable contract - if `num_turns` is
+renamed upstream, the grep stops matching and a `${turns:-99}` style default
+would silently turn this check into a constant pass, green forever with nothing
+behind it. Absent fields close the gate, same as an unfetchable log: the check
+is not reporting "clean", it is reporting that it can no longer test anything.
+This fails loudly across every PR at once when the format changes, which is the
+point - a gate that wedges the repo gets fixed in minutes, while one that
+degrades to a warning disappears into the noise.
+
+**Missing fields escalate immediately; a failed log fetch retries 3 times
+first.** The two fail-closed paths differ on purpose. A fetch failure is often
+transient - a rate limit or a network blip clears on the next cycle - so
+retrying can recover it. Absent fields cannot be recovered by retrying: the log
+downloaded fine, and parsing the same bytes again produces the same gap. The
+accepted cost is a truncated log, where the fields are missing for a transient
+reason and one refetch would have worked. That is rare enough to pay for by
+escalating early; the common cause is an upstream rename, which no number of
+retries fixes.
 
 An unreadable log is an **unverifiable** run, and unverifiable is never clean.
 This can wedge a PR for a reason that has nothing to do with its code - that is
 the intended trade: every ambiguous state in this skill resolves to "wait", and
 escalating to a human beats merging something no one checked.
+
+**Why 3 fetch failures here, but ~6 cycles in Step 4 #5.** The two waits are
+not the same measurement, and the numbers should not be unified. Step 4 #5
+waits on a run still executing - progress is happening, and runs have been
+observed taking 13 minutes, so escalating at 3 cycles would interrupt normal
+work. This wait is on a *finished* run whose log will not load: that is
+unavailability, not slowness. Rate limits and network blips clear in a cycle or
+two; a log expired past GitHub's 90-day retention never loads at all, and
+retrying it six times changes nothing. Escalate sooner because waiting longer
+buys no new information. Do not "fix" this to 6 for consistency.
 
 Only once the run is confirmed genuinely reviewed, read what it posted. Two
 surfaces, both needed:
@@ -467,7 +547,7 @@ is `true`. **You may never merge on the same run that produced the findings.**
 Fixing the comments and merging is one round short: the fix itself is
 unreviewed code.
 
-The closing condition for the PR is therefore an **extra review run, started
+The merge condition for the PR is therefore an **extra review run, started
 after the fix push, that requested nothing new**:
 
 1. The run exists in GitHub Actions for the current `head_sha` (Step 3's
@@ -477,7 +557,11 @@ after the fix push, that requested nothing new**:
 3. Both comment surfaces return **zero** new comments from `reviewer_login`
    for that run.
 
-Only all three together close the PR. Two of three is a wait, not a merge.
+Only all three together authorise the merge. Two of three is a wait.
+
+> Throughout this skill, **"gate CLOSED" means do NOT merge** - the gate is a
+> barrier, and a closed one blocks. Never read it as "close the PR", which is
+> the opposite outcome.
 
 Echo the gate to the agent terminal before merging, so the transcript shows
 which run authorised it:
@@ -579,6 +663,9 @@ Removal fails with uncommitted changes - investigate before forcing.
 - **Piping `gh run view --log` into `grep` in one command.** A failed fetch and
   a clean log both produce no match, so the check silently passes on exactly
   the runs it cannot verify. Fetch to a file, test the exit status, then grep.
+- **Gating on `permission_denials_count > 0` alone.** A genuine clean review had
+  exactly one denial. Denials only mean "blocked" alongside a `num_turns` too
+  small to be a real review; otherwise flag them and move on.
 - **Gating on `/pulls/<N>/reviews`.** Claude's review events all have empty
   bodies and there is one per inline comment - the endpoint carries no verdict.
 - **Filtering the sticky summary comment by `created_at`.** It is updated in
@@ -587,7 +674,10 @@ Removal fails with uncommitted changes - investigate before forcing.
   `@claude` comment (mention mode) or a new push (auto mode) starts a run.
 - **Merging while the review run is `in_progress`** - `--delete-branch` cancels
   it and loses the comments it was about to post.
-- **Escalating after 3 quiet cycles.** Runs have taken 13 minutes. Wait ~6.
+- **Escalating after 3 quiet cycles while a run is still executing.** Runs have
+  taken 13 minutes. Wait ~6. (This does not apply to the 3-failure limit on
+  fetching a finished run's log - that one measures unavailability, not
+  slowness. See Step 3.)
 - **Merging on the same run that produced the findings.** Fixing the comments
   and merging leaves the fix itself unreviewed. The PR closes on the *next*
   run, not the one you are answering (Step 5).
