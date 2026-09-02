@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.4] - 2026-09-02
+
+### Added
+
+- add marketplace.json for skills marketplace ([#14](https://github.com/mauriciovieira/skills/pull/14))
+
 ## [0.2.3] - 2026-09-02
 
 ### Fixed
