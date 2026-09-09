@@ -164,6 +164,34 @@ git hash-object .github/workflows/<file>.yml
 
 Equal hashes, or no review.
 
+**The same trap fires without your PR touching anything.** Byte-identity is
+checked against the default branch *as it is now*, so the moment anyone merges
+a change to the review workflow, **every open PR whose branch predates it stops
+being reviewed** - silently, with green checks. Nobody edited those PRs; the
+ground moved under them.
+
+Measured on `OmnicodeSolutions/platform-infrastructure`, where PR #44 changed
+the workflow on `main`:
+
+```
+main                     blob 8e38de32
+branches of #39,#43,#45  blob 8d40b02e
+```
+
+Three open PRs, all diverging, all self-skipping. `#43` and `#39` show
+`claude-review` green with zero reviews and zero comments - indistinguishable
+from a clean review unless you read the log. On
+`AxiomGovernance/platform#31` the same shape ran further: 62 files, 7513
+insertions, **five** green runs across five SHAs, every one self-skipped, and
+the PR was about to be used in a demo as reviewed code.
+
+So the hash check above is not a one-time precondition. **Re-run it every cycle
+whenever the PR is long-lived**, and treat a workflow change landing on the
+default branch as invalidating the review status of every open PR at once. The
+fix is per PR: merge the default branch into the branch (not cherry-pick the
+file - see the note under Step 3 on `commit_id` and merge bases), then push to
+trigger a review that will actually run.
+
 **Reviewer login.** Default is `claude[bot]`, but the action posts under a
 different account when the workflow overrides `github_token` (commonly
 `github-actions[bot]`). Detect rather than assume:
@@ -732,6 +760,34 @@ finding plus a resolved thread (Step 4a) - a summary comment on top of that is
 noise, and on a PR with no findings there is nothing to report.
 
 Then Step 6.
+
+## What an open gate does not mean
+
+Every hard stop above defends one sentence: **the reviewer examined this commit
+and asked for nothing.** That is all an open gate asserts. Three things it does
+not:
+
+- **It does not say the code works.** Review reads a diff. It cannot run the
+  thing. A real case from a sibling project: a container that would not boot
+  because corepack cached the pnpm tarball in root's home during the build
+  while the runtime ran as `node`, so every boot re-downloaded pnpm from the
+  registry and hung on a prompt. That bug does not exist in the diff - it
+  exists in the interaction between build and runtime. No allowlist, no
+  `fetch-depth`, no reviewer of any depth catches it. Running the image
+  catches it in one try, and the check would have been green with it inside.
+- **It does not say the review was thorough.** Depth does not track PR size.
+  `MarcaCerta/marcacerta#23`, 84 files and 9027 insertions, was reviewed in 7
+  turns and 22 seconds with zero findings, missing a residue its own author had
+  documented. An 11-file infrastructure PR on another repo took 9 turns and
+  found a real cross-file bug. Size predicts nothing.
+- **It does not transfer judgement.** The gate is a floor, not a verdict. It
+  stops the specific failure of merging on silence; it does not decide that
+  merging is a good idea.
+
+So the loop is worth running where an agent must decide without a human
+watching. It is not a substitute for running the code, and green here plus
+green CI still leaves "does this actually work" unanswered by anything except
+execution.
 
 ## Step 6 - Merge
 
