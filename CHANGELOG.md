@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.5] - 2026-09-09
+
+### Fixed
+
+- the sticky comment is a verdict, not a finding ([#15](https://github.com/mauriciovieira/skills/pull/15))
+- match the whole sticky body, not a substring ([#15](https://github.com/mauriciovieira/skills/pull/15))
+- gate on unresolved threads, not on comment commit_id ([#15](https://github.com/mauriciovieira/skills/pull/15))
+
 ## [0.2.4] - 2026-09-02
 
 ### Added
