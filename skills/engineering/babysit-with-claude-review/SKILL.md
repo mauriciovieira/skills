@@ -164,6 +164,44 @@ git hash-object .github/workflows/<file>.yml
 
 Equal hashes, or no review.
 
+**The same trap fires without your PR touching anything.** Byte-identity is
+checked against the default branch *as it is now*, so the moment anyone merges
+a change to the review workflow, **every open PR whose branch predates it stops
+being reviewed** - silently, with green checks. Nobody edited those PRs; the
+ground moved under them.
+
+Measured on `OmnicodeSolutions/platform-infrastructure`, where PR #44 changed
+the workflow on `main`:
+
+```
+main                     blob 8e38de32
+branches of #39,#43,#45  blob 8d40b02e
+```
+
+Three open PRs, all diverging, all self-skipping. `#43` and `#39` show
+`claude-review` green with zero reviews and zero comments - indistinguishable
+from a clean review unless you read the log. On
+`AxiomGovernance/platform#31` the same shape ran further: 62 files, 7513
+insertions, **five** green runs across five SHAs, every one self-skipped, and
+the PR was about to be used in a demo as reviewed code.
+
+**Step 3 already catches this - do not add a per-cycle hash check.** A
+self-skipped run is `success` with the marker in its log, and Step 3 greps for
+that marker on every cycle regardless of why the skip happened. Whether the PR
+diverged because it edited the file or because the default branch moved
+underneath it, the gate closes the same way. The hash check above is for
+diagnosing *why* once the gate has already closed, not for polling.
+
+What this section is for is the other direction: a green check on a PR nobody
+is babysitting. That is where these go unnoticed - `#43` and `#39` sat green
+and unreviewed, and `#31` was five runs deep. If a workflow change lands on the
+default branch, every open PR older than it is in that state until someone
+looks.
+
+The fix is per PR: merge the default branch into the branch (not cherry-pick
+the file - see the note under Step 3 on `commit_id` and merge bases), then push
+to trigger a review that will actually run.
+
 **Reviewer login.** Default is `claude[bot]`, but the action posts under a
 different account when the workflow overrides `github_token` (commonly
 `github-actions[bot]`). Detect rather than assume:
@@ -355,12 +393,72 @@ So the gate closes on **denials `> 0` AND `num_turns <= 2`**: a review stopped
 from working shows up as both at once. Anything else with denials is treated as
 reviewed but **flagged to the user**, never swallowed.
 
-> **The `num_turns <= 2` cutoff is provisional.** It sits below the two
-> confirmed-good runs on this repo (4 and 10 turns) and above a review that did
-> nothing, but it is fitted to a handful of observations, not calibrated. If a
-> real review ever trips it, raise the evidence rather than deleting the check -
-> and if a blocked run ever slips past it, tighten the cutoff. Record what you
-> saw either way.
+> **The `num_turns <= 2` cutoff is provisional.** It sits below the
+> confirmed-good runs on this repo and above a review that did nothing, but it
+> is fitted to a handful of observations, not calibrated. If a real review ever
+> trips it, raise the evidence rather than deleting the check - and if a blocked
+> run ever slips past it, tighten the cutoff. Record what you saw either way.
+
+**Observed baseline.** Every run below was a genuine review on
+`mauriciovieira/skills`, with the narrow allowlist described under
+"What denials actually measure":
+
+| `num_turns` | 2 | 4 | 5 | 9 | 14 | 17 | 23 |
+|---|---|---|---|---|---|---|---|
+| `permission_denials_count` | 0 | 1 | 1 | 1 | 3 | 4 | 14 |
+
+**What denials measure is still unknown, and one theory is already dead.**
+
+The count rises with `num_turns`, which fits per-attempt tool denials during
+exploration and does *not* fit a fixed GitHub-token permission wall - that
+would give a roughly constant count driven by how often the reviewer tries to
+comment. That much still holds, and it is why the `permissions:` block was left
+at `read` rather than widened: raising token permissions on the wall theory
+would grant real access for an unverified benefit.
+
+The specific theory that the denied tools were `Read`, `Grep` and `Glob` did
+**not** survive its first test, but read the test's limits before treating it
+as settled. The workflow allowed exactly one tool, so those looked like the
+obvious candidates. Widening `--allowedTools` to include them changed nothing:
+
+| | `num_turns` | denials |
+|---|---|---|
+| before (run `33479917884`) | 4 | 1 |
+| after (run `34371914614`) | 4 | 1 |
+
+**What that shows, and what it does not.** Both runs were on small
+markdown-only PRs, where the diff *is* the whole content: no file worth
+opening, no call to follow, no surrounding context. That is the one case where
+those three tools have nothing to do even when allowed. So the result is
+equally consistent with "widening changed nothing" and with "the reviewer never
+attempted them here" - it does not distinguish the two.
+
+What it does establish: a denial appears at a low turn count regardless of that
+widening, so at least one refusal comes from something else. `Bash` and any
+other tool outside the allowlist remain candidates. The run log carries only
+the count, never the denied tool name, so naming it needs a source the log does
+not provide.
+
+A real test needs a PR large enough that a reviewer would actually reach for
+those tools. Until then, do not record this as closed in either direction.
+
+Two things follow for reading the table:
+
+- **A low turn count alone proves nothing.** The `2 / 0` row is a PR that
+  vendored one file verbatim - little to review, so few turns and no denials.
+  Compare like with like before concluding anything from a drop.
+- **Do not re-run the widening experiment on a small PR.** It has been done and
+  it cannot discriminate. Any repeat has to be on a PR big enough that the
+  reviewer would reach for a file it cannot see from the diff.
+
+**A separate finding, still open.** Review depth does not scale with PR size.
+`MarcaCerta/marcacerta#23` - 84 files, 9027 insertions - was reviewed in 7
+turns and 22 seconds and produced zero findings, including a residue its own
+author had documented. A one-file markdown PR on this repo took 23 turns. If
+the reviewer is reading shallowly, the allowlist is one suspect and
+`fetch-depth: 1` in the checkout step is another: with no history the reviewer
+cannot compare against the base or follow how a file got that way. Neither has
+been tested.
 
 `is_error: true` closes the gate on its own; that one is unambiguous and needs
 no threshold.
@@ -672,6 +770,34 @@ finding plus a resolved thread (Step 4a) - a summary comment on top of that is
 noise, and on a PR with no findings there is nothing to report.
 
 Then Step 6.
+
+## What an open gate does not mean
+
+Every hard stop above defends one sentence: **the reviewer examined this commit
+and asked for nothing.** That is all an open gate asserts. Three things it does
+not:
+
+- **It does not say the code works.** Review reads a diff. It cannot run the
+  thing. A real case from a sibling project: a container that would not boot
+  because corepack cached the pnpm tarball in root's home during the build
+  while the runtime ran as `node`, so every boot re-downloaded pnpm from the
+  registry and hung on a prompt. That bug does not exist in the diff - it
+  exists in the interaction between build and runtime. No allowlist, no
+  `fetch-depth`, no reviewer of any depth catches it. Running the image
+  catches it in one try, and the check would have been green with it inside.
+- **It does not say the review was thorough.** Depth does not track PR size.
+  `MarcaCerta/marcacerta#23`, 84 files and 9027 insertions, was reviewed in 7
+  turns and 22 seconds with zero findings, missing a residue its own author had
+  documented. An 11-file infrastructure PR on another repo took 9 turns and
+  found a real cross-file bug. Size predicts nothing.
+- **It does not transfer judgement.** The gate is a floor, not a verdict. It
+  stops the specific failure of merging on silence; it does not decide that
+  merging is a good idea.
+
+So the loop is worth running where an agent must decide without a human
+watching. It is not a substitute for running the code, and green here plus
+green CI still leaves "does this actually work" unanswered by anything except
+execution.
 
 ## Step 6 - Merge
 
