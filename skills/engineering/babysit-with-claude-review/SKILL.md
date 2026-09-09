@@ -355,12 +355,38 @@ So the gate closes on **denials `> 0` AND `num_turns <= 2`**: a review stopped
 from working shows up as both at once. Anything else with denials is treated as
 reviewed but **flagged to the user**, never swallowed.
 
-> **The `num_turns <= 2` cutoff is provisional.** It sits below the two
-> confirmed-good runs on this repo (4 and 10 turns) and above a review that did
-> nothing, but it is fitted to a handful of observations, not calibrated. If a
-> real review ever trips it, raise the evidence rather than deleting the check -
-> and if a blocked run ever slips past it, tighten the cutoff. Record what you
-> saw either way.
+> **The `num_turns <= 2` cutoff is provisional.** It sits below the
+> confirmed-good runs on this repo and above a review that did nothing, but it
+> is fitted to a handful of observations, not calibrated. If a real review ever
+> trips it, raise the evidence rather than deleting the check - and if a blocked
+> run ever slips past it, tighten the cutoff. Record what you saw either way.
+
+**Observed baseline.** Every run below was a genuine review on
+`mauriciovieira/skills`, with the narrow allowlist described under
+"What denials actually measure":
+
+| `num_turns` | 2 | 4 | 5 | 9 | 14 | 17 | 23 |
+|---|---|---|---|---|---|---|---|
+| `permission_denials_count` | 0 | 1 | 1 | 1 | 3 | 4 | 14 |
+
+**What denials actually measure.** The count rises with `num_turns`, which fits
+per-attempt tool denials during exploration and does *not* fit a fixed
+GitHub-token permission wall - that would give a roughly constant count driven
+by how often the reviewer tries to comment. The workflow here allowed exactly
+one tool, the inline-comment MCP tool, so every `Read`, `Grep` or `Glob` the
+reviewer attempted was refused. Widening `--allowedTools` is therefore the
+lever, not the `permissions:` block; raising GitHub token permissions on that
+theory would grant real access for an unverified benefit.
+
+Two things follow for reading these numbers:
+
+- **A low turn count alone proves nothing.** The `2 / 0` row is a PR that
+  vendored one file verbatim - little to review, so few turns and no denials.
+  Compare like with like before concluding anything from a drop.
+- **This table predates widening the allowlist.** Numbers gathered after that
+  change are not comparable to it. If a post-change run with a comparable turn
+  count still shows denials, the reading above is wrong and belongs corrected
+  here rather than quietly dropped.
 
 `is_error: true` closes the gate on its own; that one is unambiguous and needs
 no threshold.
