@@ -185,12 +185,22 @@ from a clean review unless you read the log. On
 insertions, **five** green runs across five SHAs, every one self-skipped, and
 the PR was about to be used in a demo as reviewed code.
 
-So the hash check above is not a one-time precondition. **Re-run it every cycle
-whenever the PR is long-lived**, and treat a workflow change landing on the
-default branch as invalidating the review status of every open PR at once. The
-fix is per PR: merge the default branch into the branch (not cherry-pick the
-file - see the note under Step 3 on `commit_id` and merge bases), then push to
-trigger a review that will actually run.
+**Step 3 already catches this - do not add a per-cycle hash check.** A
+self-skipped run is `success` with the marker in its log, and Step 3 greps for
+that marker on every cycle regardless of why the skip happened. Whether the PR
+diverged because it edited the file or because the default branch moved
+underneath it, the gate closes the same way. The hash check above is for
+diagnosing *why* once the gate has already closed, not for polling.
+
+What this section is for is the other direction: a green check on a PR nobody
+is babysitting. That is where these go unnoticed - `#43` and `#39` sat green
+and unreviewed, and `#31` was five runs deep. If a workflow change lands on the
+default branch, every open PR older than it is in that state until someone
+looks.
+
+The fix is per PR: merge the default branch into the branch (not cherry-pick
+the file - see the note under Step 3 on `commit_id` and merge bases), then push
+to trigger a review that will actually run.
 
 **Reviewer login.** Default is `claude[bot]`, but the action posts under a
 different account when the workflow overrides `github_token` (commonly
