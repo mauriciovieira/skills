@@ -460,9 +460,19 @@ sticky=$(gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
                     and (.updated_at|fromdateiso8601? // 0) >= ($start|fromdateiso8601? // 0)))
        | last | .body // ""')
 
+# EVERY substantive line must carry the clean verdict - not just some line
+# somewhere. Drop headings and blanks first, then require that no remaining
+# line lacks the phrase. A bare substring search over the whole body would
+# call this CLEAN:
+#     ## Code review
+#     **Security:** no issues found.
+#     **Correctness:** 2 bugs, see inline comments.
+lines=$(printf '%s\n' "$sticky" | grep -vE '^[[:space:]]*(#+.*)?[[:space:]]*$')
+
 if [ -z "$sticky" ]; then
   echo "no sticky verdict this run - inline comments decide"
-elif printf '%s' "$sticky" | grep -qiE 'no issues found|found no issues'; then
+elif [ -n "$lines" ] \
+     && ! printf '%s\n' "$lines" | grep -qivE 'no issues found|found no issues'; then
   echo "sticky verdict: clean"
 else
   echo "sticky verdict NOT recognised as clean - gate CLOSED, read it yourself:"
@@ -476,6 +486,13 @@ fi
 > a pattern update - never a silent merge. Widen it from observed bodies, and
 > never invert it into "assume clean unless it looks bad": that hands every
 > future wording a free pass, which is this skill's core failure mode.
+>
+> **Match the whole body, never a substring.** The check above is "no line
+> fails the pattern", not "some line matches it". A sectioned verdict that
+> clears one dimension and flags another contains the clean phrase while
+> carrying findings, and a bare `grep -qiE` would open the gate on it - the
+> same free pass the paragraph above forbids, arriving through a *recognised*
+> body instead of an unrecognised one.
 
 Interpret:
 
