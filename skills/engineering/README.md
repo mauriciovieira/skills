@@ -11,6 +11,7 @@ Skills I use daily for code work.
 - **[creative-constraints](./creative-constraints/SKILL.md)** - Roll a machine-random set of binding design constraints before any UI/web design work, so no two sessions converge on the same generic, templated layout.
 - **[diagnosing-bugs](./diagnosing-bugs/SKILL.md)** — Disciplined diagnosis loop for hard bugs and performance regressions: reproduce → minimise → hypothesise → instrument → fix → regression-test.
 - **[domain-modeling](./domain-modeling/SKILL.md)** — Actively build and sharpen a project's domain model — challenge terms, stress-test with scenarios, update `CONTEXT.md` and ADRs inline.
+- **[gauntlet-loop](./gauntlet-loop/SKILL.md)** - Turn any goal into one short, paste-ready prompt that makes an agent set a quality bar, run a builder and a harsh critic pair, compare blind, and loop until it wins.
 - **[grill-with-docs](./grill-with-docs/SKILL.md)** — Grilling session that also builds your project's domain model, sharpening terminology and updating `CONTEXT.md` and ADRs inline.
 - **[implement](./implement/SKILL.md)** — Build the work described by a spec or set of tickets, driving `/tdd` at pre-agreed seams and closing out with `/code-review` before committing.
 - **[improve-codebase-architecture](./improve-codebase-architecture/SKILL.md)** — Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick.
