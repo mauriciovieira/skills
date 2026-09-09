@@ -57,12 +57,49 @@ check "denials, real review" FLAG            "$HERE/fixtures/run-flagged.log"
 check "denials, no work"     CLOSED          "$TMP/blocked.log"
 check "result fields absent" CLOSED-UNVERIFIABLE "$TMP/renamed.log"
 
+# The sticky surface is a verdict, not a finding: a clean review posts one too,
+# so its body decides, never its existence.
+sticky_verdict() {
+  local body lines; body=$(cat "$1")
+  # Every substantive line must carry the clean verdict, so a sectioned body
+  # that clears one dimension and flags another cannot pass on a substring.
+  lines=$(printf '%s\n' "$body" | grep -vE '^[[:space:]]*(#+.*)?[[:space:]]*$')
+  if [ -z "$body" ]; then
+    echo "ABSENT"
+  elif [ -n "$lines" ] \
+       && ! printf '%s\n' "$lines" | grep -qivE 'no issues found|found no issues'; then
+    echo "CLEAN"
+  else
+    echo "CLOSED-UNREAD"
+  fi
+}
+
+check_sticky() {  # check_sticky <label> <expected> <file>
+  local got; got=$(sticky_verdict "$3")
+  if [ "$got" = "$2" ]; then
+    printf 'ok   %-28s %s\n' "$1" "$got"
+  else
+    printf 'FAIL %-28s expected %s, got %s\n' "$1" "$2" "$got"
+    fail=1
+  fi
+}
+
+: > "$TMP/sticky-absent.md"
+# Real body from mauriciovieira/skills#14 - a clean review still posts a sticky.
+check_sticky "sticky says clean"   CLEAN         "$HERE/fixtures/sticky-clean.md"
+check_sticky "sticky has findings" CLOSED-UNREAD "$HERE/fixtures/sticky-findings.md"
+check_sticky "no sticky this run"  ABSENT        "$TMP/sticky-absent.md"
+# Regression, PR #15 review: the clean phrase appears in a body that also
+# carries findings. A substring match would have opened the gate here.
+check_sticky "sticky clean per section" CLOSED-UNREAD "$HERE/fixtures/sticky-sectioned.md"
+
 # Drift check: the branch conditions above must still appear in SKILL.md. This
 # is why the logic is duplicated rather than extracted - a copy that silently
 # diverges from the doc would test nothing.
 for cond in \
   '\[ -z "\$denials" \] \|\| \[ -z "\$turns" \]' \
-  '\[ "\$denials" -gt 0 \] && \[ "\$turns" -le 2 \]'
+  '\[ "\$denials" -gt 0 \] && \[ "\$turns" -le 2 \]' \
+  "grep -qivE 'no issues found|found no issues'"
 do
   if grep -qF "$(printf '%s' "$cond" | sed 's/\\//g')" "$SKILL"; then
     printf 'ok   %-28s present in SKILL.md\n' "drift check"

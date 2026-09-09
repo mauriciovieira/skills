@@ -198,7 +198,7 @@ comparison, no propagation race.
 
 Reset `awaiting_rereview` to `false` only on a wake-up (never on the push turn)
 where Step 3 found a `completed` + `success` review run for the current
-`head_sha` and both comment surfaces returned zero. It is belt-and-braces on
+`head_sha`, no unresolved threads, and a clean sticky. It is belt-and-braces on
 top of the SHA watermark: the watermark closes the gate, this flag stops you
 merging on the same turn you pushed.
 
@@ -410,19 +410,38 @@ Only once the run is confirmed genuinely reviewed, read what it posted. Two
 surfaces, both needed:
 
 ```sh
-# Inline review comments. Claude posts one review event per comment, all with
-# empty bodies, so /reviews tells you nothing - read the comments directly.
-# commit_id is the primary filter; the run window is the cross-check.
-gh api repos/<owner>/<repo>/pulls/<N>/comments --paginate \
-  | jq -s --arg sha "$head_sha" --arg login "<reviewer_login>" --arg start "$run_start" \
-      'add
-       | map(select(.user.login == $login
-                    and (.commit_id == $sha
-                         or ((.created_at|fromdateiso8601? // 0) >= ($start|fromdateiso8601? // 0)))))
-       | {count: length, comments: [.[] | {id, path, line, body}]}'
+# Inline findings. Claude posts one review event per comment, all with empty
+# bodies, so /reviews tells you nothing. Ask for UNRESOLVED THREADS instead of
+# filtering raw comments: a thread you answered and resolved in Step 4a is
+# addressed by definition, and a new finding always arrives as a new
+# unresolved thread. One query gives both the state and the content.
+gh api graphql -F owner=<owner> -F repo=<repo> -F number=<N> -f query='
+  query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100) {
+          nodes {
+            id isResolved isOutdated
+            comments(first: 1) {
+              nodes { databaseId author { login } path line createdAt body }
+            }
+          }
+        }
+      }
+    }
+  }' \
+  | jq --arg login "<reviewer_login>" \
+      '[.data.repository.pullRequest.reviewThreads.nodes[]
+        | select(.isResolved == false)
+        | .comments.nodes[0]
+        | select(.author.login | startswith("claude"))]
+       | {count: length, findings: .}'
 
 # Sticky summary comment, when the workflow sets use_sticky_comment. It is
 # UPDATED IN PLACE, so filter on updated_at, never created_at.
+#
+# This surface is a VERDICT, not a finding. Its existence decides nothing -
+# read the body. See "Reading the sticky verdict" below.
 gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
   | jq -s --arg login "<reviewer_login>" --arg start "$run_start" \
       'add
@@ -430,6 +449,78 @@ gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
                     and (.updated_at|fromdateiso8601? // 0) >= ($start|fromdateiso8601? // 0)))
        | {count: length, bodies: [.[].body]}'
 ```
+
+> **Never filter inline comments by `commit_id`.** GitHub **rewrites** a review
+> comment's `commit_id` to the PR's new head every time you push, so a comment
+> from round 1 that you already fixed, replied to, and resolved reappears as if
+> it were written against the current commit. Its `original_commit_id` keeps
+> the sha it was really about. Observed on `mauriciovieira/skills#15`: comment
+> `3916342744`, `created_at` 2026-09-02, `original_commit_id: 515d28f`,
+> `commit_id: a501711`, `isResolved: true` - the round-2 review posted nothing
+> at all, yet a `commit_id == head_sha` filter reported one finding. A loop
+> using that filter can never converge: every push resurrects every comment it
+> has already answered. Gate on thread resolution, which is the actual state of
+> "addressed".
+
+### Reading the sticky verdict
+
+The two surfaces mean different things, and counting both the same way is
+wrong. **Inline comments are findings** - one per issue, each on the line it is
+about, and any of them blocks the merge. **The sticky comment is a summary of
+the whole review**, so a clean review produces one too:
+
+```
+## Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+```
+
+That is `count: 1` on the sticky surface and means the opposite of a finding.
+Treating it as unaddressed feedback wedges a PR the reviewer just approved.
+
+So: gate on the **inline** count, and on the sticky **body**.
+
+```sh
+sticky=$(gh api repos/<owner>/<repo>/issues/<N>/comments --paginate \
+  | jq -s -r --arg login "<reviewer_login>" --arg start "$run_start" \
+      'add
+       | map(select(.user.login == $login
+                    and (.updated_at|fromdateiso8601? // 0) >= ($start|fromdateiso8601? // 0)))
+       | last | .body // ""')
+
+# EVERY substantive line must carry the clean verdict - not just some line
+# somewhere. Drop headings and blanks first, then require that no remaining
+# line lacks the phrase. A bare substring search over the whole body would
+# call this CLEAN:
+#     ## Code review
+#     **Security:** no issues found.
+#     **Correctness:** 2 bugs, see inline comments.
+lines=$(printf '%s\n' "$sticky" | grep -vE '^[[:space:]]*(#+.*)?[[:space:]]*$')
+
+if [ -z "$sticky" ]; then
+  echo "no sticky verdict this run - inline comments decide"
+elif [ -n "$lines" ] \
+     && ! printf '%s\n' "$lines" | grep -qivE 'no issues found|found no issues'; then
+  echo "sticky verdict: clean"
+else
+  echo "sticky verdict NOT recognised as clean - gate CLOSED, read it yourself:"
+  printf '%s\n' "$sticky"
+fi
+```
+
+> **The clean-verdict pattern is provisional.** It matches the only real clean
+> sticky observed (`mauriciovieira/skills#14`). An unrecognised body closes the
+> gate rather than passing, so a reworded verdict costs you a manual read and
+> a pattern update - never a silent merge. Widen it from observed bodies, and
+> never invert it into "assume clean unless it looks bad": that hands every
+> future wording a free pass, which is this skill's core failure mode.
+>
+> **Match the whole body, never a substring.** The check above is "no line
+> fails the pattern", not "some line matches it". A sectioned verdict that
+> clears one dimension and flags another contains the clean phrase while
+> carrying findings, and a bare `grep -qiE` would open the gate on it - the
+> same free pass the paragraph above forbids, arriving through a *recognised*
+> body instead of an unrecognised one.
 
 Interpret:
 
@@ -446,12 +537,17 @@ Interpret:
 - **Run `completed` + `success`, but the log grep matched** -> the action
   skipped itself; no review happened. Gate closed (Hard Stop #7). Fix the cause
   - almost always this PR editing the review workflow file - and re-run.
-- **Run `completed` + `success`, log grep clean, zero comments on both
-  surfaces** -> genuinely clean review. Merge-eligible. Claude says nothing
-  when it finds nothing; the successful, non-self-skipped run on the matching
-  SHA is what makes that meaningful.
-- **Run `completed` + `success`, >= 1 comment** -> unaddressed until fixed and
-  pushed (or replied "won't fix" with a reason). Go to Step 4 #3.
+- **Run `completed` + `success`, log grep clean, zero UNRESOLVED threads, and
+  the sticky body absent or recognised as clean** -> genuinely clean review.
+  Merge-eligible. The successful, non-self-skipped run on the matching SHA is
+  what makes that meaningful.
+- **Run `completed` + `success`, sticky body present but not recognised as
+  clean** -> gate closed. Read it; it may carry findings the inline surface
+  does not. Do not merge on an unread verdict.
+- **Run `completed` + `success`, >= 1 unresolved thread** -> unaddressed until
+  fixed and pushed (or replied "won't fix" with a reason). Go to Step 4 #3.
+  A thread you already answered and resolved does not count - that is why the
+  query filters on `isResolved`, not on a comment count.
 
 ## Step 4 - Decide
 
@@ -670,6 +766,9 @@ Removal fails with uncommitted changes - investigate before forcing.
   bodies and there is one per inline comment - the endpoint carries no verdict.
 - **Filtering the sticky summary comment by `created_at`.** It is updated in
   place; `created_at` stays frozen at the first round forever.
+- **Filtering inline comments by `commit_id`.** GitHub rewrites it to the new
+  head on every push, so resolved round-1 findings reappear forever and the
+  loop never converges. Gate on unresolved threads instead.
 - **Replying in a `claude[bot]` thread and expecting a re-review.** Only a new
   `@claude` comment (mention mode) or a new push (auto mode) starts a run.
 - **Merging while the review run is `in_progress`** - `--delete-branch` cancels
