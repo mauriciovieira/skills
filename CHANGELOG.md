@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.6] - 2026-09-09
+
+### Added
+
+- vendor gauntlet-loop skill from robonuggets ([#17](https://github.com/mauriciovieira/skills/pull/17))
+
 ## [0.2.5] - 2026-09-09
 
 ### Fixed
