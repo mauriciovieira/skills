@@ -378,29 +378,40 @@ comment. That much still holds, and it is why the `permissions:` block was left
 at `read` rather than widened: raising token permissions on the wall theory
 would grant real access for an unverified benefit.
 
-The specific theory that the denied tools were `Read`, `Grep` and `Glob` was
-**tested and falsified.** The workflow allowed exactly one tool, so those
-looked like the obvious candidates. Widening `--allowedTools` to include them
-changed nothing:
+The specific theory that the denied tools were `Read`, `Grep` and `Glob` did
+**not** survive its first test, but read the test's limits before treating it
+as settled. The workflow allowed exactly one tool, so those looked like the
+obvious candidates. Widening `--allowedTools` to include them changed nothing:
 
 | | `num_turns` | denials |
 |---|---|---|
 | before (run `33479917884`) | 4 | 1 |
 | after (run `34371914614`) | 4 | 1 |
 
-Same turn count, same denial count. Whatever the reviewer is being refused, it
-is not those three. Candidates not yet ruled out include `Bash` and any other
-tool outside the allowlist; the run log carries only the count, never the
-denied tool name, so settling it needs a source the log does not provide.
+**What that shows, and what it does not.** Both runs were on small
+markdown-only PRs, where the diff *is* the whole content: no file worth
+opening, no call to follow, no surrounding context. That is the one case where
+those three tools have nothing to do even when allowed. So the result is
+equally consistent with "widening changed nothing" and with "the reviewer never
+attempted them here" - it does not distinguish the two.
+
+What it does establish: a denial appears at a low turn count regardless of that
+widening, so at least one refusal comes from something else. `Bash` and any
+other tool outside the allowlist remain candidates. The run log carries only
+the count, never the denied tool name, so naming it needs a source the log does
+not provide.
+
+A real test needs a PR large enough that a reviewer would actually reach for
+those tools. Until then, do not record this as closed in either direction.
 
 Two things follow for reading the table:
 
 - **A low turn count alone proves nothing.** The `2 / 0` row is a PR that
   vendored one file verbatim - little to review, so few turns and no denials.
   Compare like with like before concluding anything from a drop.
-- **Do not widen the allowlist again expecting denials to fall.** That
-  experiment has been run. There may be other reasons to widen it - see below -
-  but the denial count is not evidence for or against them.
+- **Do not re-run the widening experiment on a small PR.** It has been done and
+  it cannot discriminate. Any repeat has to be on a PR big enough that the
+  reviewer would reach for a file it cannot see from the diff.
 
 **A separate finding, still open.** Review depth does not scale with PR size.
 `MarcaCerta/marcacerta#23` - 84 files, 9027 insertions - was reviewed in 7
