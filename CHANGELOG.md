@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.8] - 2026-09-09
+
+### Changed
+
+- record the denials baseline before widening the allowlist ([#18](https://github.com/mauriciovieira/skills/pull/18))
+- record that the Read/Grep/Glob theory was falsified ([#18](https://github.com/mauriciovieira/skills/pull/18))
+- weaken the falsification claim to what the data supports ([#18](https://github.com/mauriciovieira/skills/pull/18))
+- a merged workflow change silently unreviews open PRs ([#18](https://github.com/mauriciovieira/skills/pull/18))
+- drop the redundant per-cycle hash check ([#18](https://github.com/mauriciovieira/skills/pull/18))
+
 ## [0.2.7] - 2026-09-09
 
 ### Changed
