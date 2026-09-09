@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.7] - 2026-09-09
+
+### Changed
+
+- let the reviewer read the repo, not just the diff ([#16](https://github.com/mauriciovieira/skills/pull/16))
+
 ## [0.2.6] - 2026-09-09
 
 ### Added
