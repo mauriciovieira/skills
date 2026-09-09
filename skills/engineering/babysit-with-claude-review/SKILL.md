@@ -369,24 +369,47 @@ reviewed but **flagged to the user**, never swallowed.
 |---|---|---|---|---|---|---|---|
 | `permission_denials_count` | 0 | 1 | 1 | 1 | 3 | 4 | 14 |
 
-**What denials actually measure.** The count rises with `num_turns`, which fits
-per-attempt tool denials during exploration and does *not* fit a fixed
-GitHub-token permission wall - that would give a roughly constant count driven
-by how often the reviewer tries to comment. The workflow here allowed exactly
-one tool, the inline-comment MCP tool, so every `Read`, `Grep` or `Glob` the
-reviewer attempted was refused. Widening `--allowedTools` is therefore the
-lever, not the `permissions:` block; raising GitHub token permissions on that
-theory would grant real access for an unverified benefit.
+**What denials measure is still unknown, and one theory is already dead.**
 
-Two things follow for reading these numbers:
+The count rises with `num_turns`, which fits per-attempt tool denials during
+exploration and does *not* fit a fixed GitHub-token permission wall - that
+would give a roughly constant count driven by how often the reviewer tries to
+comment. That much still holds, and it is why the `permissions:` block was left
+at `read` rather than widened: raising token permissions on the wall theory
+would grant real access for an unverified benefit.
+
+The specific theory that the denied tools were `Read`, `Grep` and `Glob` was
+**tested and falsified.** The workflow allowed exactly one tool, so those
+looked like the obvious candidates. Widening `--allowedTools` to include them
+changed nothing:
+
+| | `num_turns` | denials |
+|---|---|---|
+| before (run `33479917884`) | 4 | 1 |
+| after (run `34371914614`) | 4 | 1 |
+
+Same turn count, same denial count. Whatever the reviewer is being refused, it
+is not those three. Candidates not yet ruled out include `Bash` and any other
+tool outside the allowlist; the run log carries only the count, never the
+denied tool name, so settling it needs a source the log does not provide.
+
+Two things follow for reading the table:
 
 - **A low turn count alone proves nothing.** The `2 / 0` row is a PR that
   vendored one file verbatim - little to review, so few turns and no denials.
   Compare like with like before concluding anything from a drop.
-- **This table predates widening the allowlist.** Numbers gathered after that
-  change are not comparable to it. If a post-change run with a comparable turn
-  count still shows denials, the reading above is wrong and belongs corrected
-  here rather than quietly dropped.
+- **Do not widen the allowlist again expecting denials to fall.** That
+  experiment has been run. There may be other reasons to widen it - see below -
+  but the denial count is not evidence for or against them.
+
+**A separate finding, still open.** Review depth does not scale with PR size.
+`MarcaCerta/marcacerta#23` - 84 files, 9027 insertions - was reviewed in 7
+turns and 22 seconds and produced zero findings, including a residue its own
+author had documented. A one-file markdown PR on this repo took 23 turns. If
+the reviewer is reading shallowly, the allowlist is one suspect and
+`fetch-depth: 1` in the checkout step is another: with no history the reviewer
+cannot compare against the base or follow how a file got that way. Neither has
+been tested.
 
 `is_error: true` closes the gate on its own; that one is unambiguous and needs
 no threshold.
