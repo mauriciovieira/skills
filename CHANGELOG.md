@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.10] - 2026-09-10
+
+### Fixed
+
+- an old branch is not a stale branch ([#20](https://github.com/mauriciovieira/skills/pull/20))
+- the rule is the checked-out file, not the branch ([#20](https://github.com/mauriciovieira/skills/pull/20))
+
 ## [0.2.9] - 2026-09-10
 
 ### Fixed
