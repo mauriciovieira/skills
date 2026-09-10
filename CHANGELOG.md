@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.9] - 2026-09-10
+
+### Fixed
+
+- remove private repo and PR names from the public skill ([#19](https://github.com/mauriciovieira/skills/pull/19))
+
 ## [0.2.8] - 2026-09-09
 
 ### Changed
