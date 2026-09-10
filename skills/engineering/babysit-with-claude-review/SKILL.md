@@ -75,8 +75,10 @@ next cycle instead of merging.
      review activity in `gh run list`. Gate on the **review** workflow only,
      matched by workflow file path (Step 0), and require `conclusion: success`.
    - **Self-skip inside a `success` run.** The action refuses to review when
-     the workflow file on the PR branch is not byte-identical to the version on
-     the default branch, and it does so as a `##[warning]` in the step - so the
+     the workflow file **as checked out** - which for a `pull_request` event is
+     the merge ref, not the branch - is not byte-identical to the default
+     branch's copy as it stands right now. It does so as a `##[warning]` in the
+     step, so the
      **run still reports `completed` + `success`, with zero comments**. That is
      a merge-on-silence trap that `conclusion` cannot see. Real case, run
      `33479468831` on `mauriciovieira/skills`:
@@ -161,44 +163,64 @@ git show origin/main:.github/workflows/<file>.yml | git hash-object --stdin
 git hash-object .github/workflows/<file>.yml
 ```
 
-Equal hashes, or no review.
+Equal hashes mean the file will not be what stops the review. **Unequal hashes
+prove nothing** - this compares your branch, and the action compares the merge
+ref. See the next section before drawing any conclusion from a difference.
 
-**The same trap fires without your PR touching anything.** Byte-identity is
-checked against the default branch *as it is now*, so the moment anyone merges
-a change to the review workflow, **every open PR whose branch predates it stops
-being reviewed** - silently, with green checks. Nobody edited those PRs; the
-ground moved under them.
+**The rule is about the file as CHECKED OUT, not about your branch.** Two
+earlier versions of this section got this wrong in opposite directions - first
+"any branch older than the workflow change stops being reviewed", then "only a
+PR that modifies the file self-skips". Both are proxies, and both were falsified
+against run logs. The action's own message says what it actually does:
 
-Measured on a repository where one merged PR changed the workflow on `main`:
+> The workflow file must exist and have identical content to the version on the
+> repository's default branch.
 
-```
-main                  blob 8e38de32
-three open branches   blob 8d40b02e
-```
+Identical **as checked out**. `pull_request` events check out the MERGE REF, so:
 
-All three diverged, all self-skipped. Two of them showed `claude-review` green
-with zero reviews and zero comments - indistinguishable from a clean review
-unless you read the log. On another repository the same shape ran further: a PR
-of 62 files and 7513 insertions accumulated **five** green runs across five
-SHAs, every one self-skipped, and was about to be used in a demo as reviewed
-code.
+- **A branch that does not touch the file** gets the default branch's copy from
+  the merge, byte-identical by construction. It reviews however old it is, and
+  it reviews even with no copy of its own on the branch at all.
+- **A branch that does touch the file** keeps its own version through the merge.
+  It reviews only if that version happens to equal what the default branch holds
+  *right now*.
 
-**Step 3 already catches this - do not add a per-cycle hash check.** A
+Neither branch age nor "does the PR edit this file" decides it on its own.
+
+Measured against run logs, one row per thing that could have explained it:
+
+| what was true | what the log said |
+|---|---|
+| branch blob differed from the default branch's at run time | reviewed, 9 turns |
+| branch had no workflow file at all | reviewed, 13 turns |
+| same head, two runs, default branch adopted the branch's content in between | self-skipped, then reviewed |
+
+The third row is the one that settles it, because it holds the PR still. Same
+head SHA, nothing about the pull request changed, and the two runs disagree. The
+only thing that moved was the default branch's copy, which the second run
+matched by 37 seconds.
+
+Practically, for babysitting one PR: **do not predict this, read the log.** Step
+3 greps every run for the self-skip marker, which is the fact rather than a
+guess about it. If a PR does edit the workflow file, expect self-skips until the
+same content is on the default branch - land it there first, then merge the
+default branch into the PR so the two agree.
+
+**Step 3 already catches a self-skip - do not add a per-cycle hash check.** A
 self-skipped run is `success` with the marker in its log, and Step 3 greps for
-that marker on every cycle regardless of why the skip happened. Whether the PR
-diverged because it edited the file or because the default branch moved
-underneath it, the gate closes the same way. The hash check above is for
-diagnosing *why* once the gate has already closed, not for polling.
+that marker on every cycle regardless of why the skip happened.
 
-What this section is for is the other direction: a green check on a PR nobody
-is babysitting. That is where these go unnoticed - `#43` and `#39` sat green
-and unreviewed, and `#31` was five runs deep. If a workflow change lands on the
-default branch, every open PR older than it is in that state until someone
-looks.
+**A hash comparison is diagnosis, never a gate.** Three traps, and the first two
+are why the check above this paragraph is written the way it is. A local
+`git hash-object` compares your branch against the default branch and never sees
+the merge ref, so an old branch that touched nothing shows unequal hashes and
+still reviews. Equal hashes are worth having; unequal ones prove nothing. And in
+a shell, an unquoted URL containing `?` is a glob: under zsh
+`gh api repos/o/r/contents/f.yml?ref=main` dies with `no matches found`, the
+variable comes back empty, and an empty-against-empty comparison reports
+IDENTICAL - a fail-open on the exact check meant to prevent merging an
+unreviewed PR. Quote the URL, and treat an empty hash as gate closed.
 
-The fix is per PR: merge the default branch into the branch (not cherry-pick
-the file - see the note under Step 3 on `commit_id` and merge bases), then push
-to trigger a review that will actually run.
 
 **Reviewer login.** Default is `claude[bot]`, but the action posts under a
 different account when the workflow overrides `github_token` (commonly
