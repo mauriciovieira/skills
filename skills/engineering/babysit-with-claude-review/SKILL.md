@@ -163,42 +163,50 @@ git hash-object .github/workflows/<file>.yml
 
 Equal hashes, or no review.
 
-**The same trap fires without your PR touching anything.** Byte-identity is
-checked against the default branch *as it is now*, so the moment anyone merges
-a change to the review workflow, **every open PR whose branch predates it stops
-being reviewed** - silently, with green checks. Nobody edited those PRs; the
-ground moved under them.
+**This does NOT fire on a PR that leaves the workflow file alone.** An earlier
+version of this skill claimed it did - that a workflow change on the default
+branch silently unreviews every open PR whose branch predates it. That claim was
+wrong, and it was believed long enough to be worth stating plainly here.
 
-Measured on a repository where one merged PR changed the workflow on `main`:
+`pull_request` events check out the **merge ref**, not the head branch. For a
+file the branch never modified, the merge takes the default branch's version, so
+the checked-out copy is byte-identical by construction however old the branch
+is. An old branch is not a stale branch.
 
-```
-main                  blob 8e38de32
-three open branches   blob 8d40b02e
-```
+Measured against run logs, which is the only way to settle it:
 
-All three diverged, all self-skipped. Two of them showed `claude-review` green
-with zero reviews and zero comments - indistinguishable from a clean review
-unless you read the log. On another repository the same shape ran further: a PR
-of 62 files and 7513 insertions accumulated **five** green runs across five
-SHAs, every one self-skipped, and was about to be used in a demo as reviewed
-code.
+| branch state | what the log said |
+|---|---|
+| three branches whose workflow blob differed from the default branch's | reviewed - 9, 20 and 26 turns |
+| one branch with no workflow file on it at all | reviewed - 5 turns |
+| one PR that modifies the workflow file | self-skipped |
 
-**Step 3 already catches this - do not add a per-cycle hash check.** A
+The middle row is the one that kills every version of the blob theory: with no
+file on the branch, only the merge ref can explain a review happening at all.
+And one of those "stale" branches ran *after* the default branch changed, which
+rules out timing as the explanation.
+
+So the rule is simply: **a PR self-skips when it modifies the review workflow
+file, and not otherwise.** Check with `gh pr diff <n> -R <repo> --name-only`.
+
+The 62-file PR that accumulated five green self-skipped runs was a real case,
+and it fits this rule rather than contradicting it: that branch carried its own
+copy of the workflow file (blob `9f0cb0a9` against the default branch's
+`184c69e2`), because the action had once been installed directly on it. Merging
+the default branch in resolved the file back and the reviews started working.
+That is the one situation where the merge below is the fix.
+
+**Step 3 already catches a self-skip - do not add a per-cycle hash check.** A
 self-skipped run is `success` with the marker in its log, and Step 3 greps for
-that marker on every cycle regardless of why the skip happened. Whether the PR
-diverged because it edited the file or because the default branch moved
-underneath it, the gate closes the same way. The hash check above is for
-diagnosing *why* once the gate has already closed, not for polling.
+that marker on every cycle regardless of why the skip happened.
 
-What this section is for is the other direction: a green check on a PR nobody
-is babysitting. That is where these go unnoticed - `#43` and `#39` sat green
-and unreviewed, and `#31` was five runs deep. If a workflow change lands on the
-default branch, every open PR older than it is in that state until someone
-looks.
-
-The fix is per PR: merge the default branch into the branch (not cherry-pick
-the file - see the note under Step 3 on `commit_id` and merge bases), then push
-to trigger a review that will actually run.
+**A hash comparison is diagnosis, never a gate.** Two traps if you reach for one
+anyway. It answers the wrong question - a differing blob does not mean a skip,
+per the table above. And in a shell, an unquoted URL containing `?` is a glob:
+under zsh `gh api repos/o/r/contents/f.yml?ref=main` dies with `no matches
+found`, the variable comes back empty, and an empty-against-empty comparison
+reports IDENTICAL. That is a fail-open on the exact check meant to prevent
+merging an unreviewed PR. Quote the URL, and treat an empty hash as gate closed.
 
 **Reviewer login.** Default is `claude[bot]`, but the action posts under a
 different account when the workflow overrides `github_token` (commonly

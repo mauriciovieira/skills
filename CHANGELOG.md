@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.10] - 2026-09-10
+
+### Fixed
+
+- `babysit-with-claude-review`: a workflow change on the default branch does not
+  unreview open PRs. `pull_request` runs against the merge ref, so a branch that
+  leaves the workflow file alone gets the default branch's copy and is reviewed
+  normally however old it is. Only a PR that modifies the file self-skips.
+  Falsified against run logs; the previous claim was wrong.
+
 ## [0.2.9] - 2026-09-10
 
 ### Fixed
