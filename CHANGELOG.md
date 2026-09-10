@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.11] - 2026-09-10
+
+### Added
+
+- structural verification for the skill contract ([#21](https://github.com/mauriciovieira/skills/pull/21))
+
 ## [0.2.10] - 2026-09-10
 
 ### Fixed
