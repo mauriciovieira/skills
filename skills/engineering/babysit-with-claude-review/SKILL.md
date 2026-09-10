@@ -75,8 +75,10 @@ next cycle instead of merging.
      review activity in `gh run list`. Gate on the **review** workflow only,
      matched by workflow file path (Step 0), and require `conclusion: success`.
    - **Self-skip inside a `success` run.** The action refuses to review when
-     the workflow file on the PR branch is not byte-identical to the version on
-     the default branch, and it does so as a `##[warning]` in the step - so the
+     the workflow file **as checked out** - which for a `pull_request` event is
+     the merge ref, not the branch - is not byte-identical to the default
+     branch's copy as it stands right now. It does so as a `##[warning]` in the
+     step, so the
      **run still reports `completed` + `success`, with zero comments**. That is
      a merge-on-silence trap that `conclusion` cannot see. Real case, run
      `33479468831` on `mauriciovieira/skills`:
@@ -161,52 +163,64 @@ git show origin/main:.github/workflows/<file>.yml | git hash-object --stdin
 git hash-object .github/workflows/<file>.yml
 ```
 
-Equal hashes, or no review.
+Equal hashes mean the file will not be what stops the review. **Unequal hashes
+prove nothing** - this compares your branch, and the action compares the merge
+ref. See the next section before drawing any conclusion from a difference.
 
-**This does NOT fire on a PR that leaves the workflow file alone.** An earlier
-version of this skill claimed it did - that a workflow change on the default
-branch silently unreviews every open PR whose branch predates it. That claim was
-wrong, and it was believed long enough to be worth stating plainly here.
+**The rule is about the file as CHECKED OUT, not about your branch.** Two
+earlier versions of this section got this wrong in opposite directions - first
+"any branch older than the workflow change stops being reviewed", then "only a
+PR that modifies the file self-skips". Both are proxies, and both were falsified
+against run logs. The action's own message says what it actually does:
 
-`pull_request` events check out the **merge ref**, not the head branch. For a
-file the branch never modified, the merge takes the default branch's version, so
-the checked-out copy is byte-identical by construction however old the branch
-is. An old branch is not a stale branch.
+> The workflow file must exist and have identical content to the version on the
+> repository's default branch.
 
-Measured against run logs, which is the only way to settle it:
+Identical **as checked out**. `pull_request` events check out the MERGE REF, so:
 
-| branch state | what the log said |
+- **A branch that does not touch the file** gets the default branch's copy from
+  the merge, byte-identical by construction. It reviews however old it is, and
+  it reviews even with no copy of its own on the branch at all.
+- **A branch that does touch the file** keeps its own version through the merge.
+  It reviews only if that version happens to equal what the default branch holds
+  *right now*.
+
+Neither branch age nor "does the PR edit this file" decides it on its own.
+
+Measured against run logs, one row per thing that could have explained it:
+
+| what was true | what the log said |
 |---|---|
-| three branches whose workflow blob differed from the default branch's | reviewed - 9, 20 and 26 turns |
-| one branch with no workflow file on it at all | reviewed - 5 turns |
-| one PR that modifies the workflow file | self-skipped |
+| branch blob differed from the default branch's at run time | reviewed, 9 turns |
+| branch had no workflow file at all | reviewed, 13 turns |
+| same head, two runs, default branch adopted the branch's content in between | self-skipped, then reviewed |
 
-The middle row is the one that kills every version of the blob theory: with no
-file on the branch, only the merge ref can explain a review happening at all.
-And one of those "stale" branches ran *after* the default branch changed, which
-rules out timing as the explanation.
+The third row is the one that settles it, because it holds the PR still. Same
+head SHA, nothing about the pull request changed, and the two runs disagree. The
+only thing that moved was the default branch's copy, which the second run
+matched by 37 seconds.
 
-So the rule is simply: **a PR self-skips when it modifies the review workflow
-file, and not otherwise.** Check with `gh pr diff <n> -R <repo> --name-only`.
-
-The 62-file PR that accumulated five green self-skipped runs was a real case,
-and it fits this rule rather than contradicting it: that branch carried its own
-copy of the workflow file (blob `9f0cb0a9` against the default branch's
-`184c69e2`), because the action had once been installed directly on it. Merging
-the default branch in resolved the file back and the reviews started working.
-That is the one situation where the merge below is the fix.
+Practically, for babysitting one PR: **do not predict this, read the log.** Step
+3 greps every run for the self-skip marker, which is the fact rather than a
+guess about it. If a PR does edit the workflow file, expect self-skips until the
+same content is on the default branch - land it there first, then merge the
+default branch into the PR so the two agree.
 
 **Step 3 already catches a self-skip - do not add a per-cycle hash check.** A
 self-skipped run is `success` with the marker in its log, and Step 3 greps for
 that marker on every cycle regardless of why the skip happened.
 
-**A hash comparison is diagnosis, never a gate.** Two traps if you reach for one
-anyway. It answers the wrong question - a differing blob does not mean a skip,
-per the table above. And in a shell, an unquoted URL containing `?` is a glob:
-under zsh `gh api repos/o/r/contents/f.yml?ref=main` dies with `no matches
-found`, the variable comes back empty, and an empty-against-empty comparison
-reports IDENTICAL. That is a fail-open on the exact check meant to prevent
-merging an unreviewed PR. Quote the URL, and treat an empty hash as gate closed.
+**A hash comparison is diagnosis, never a gate.** Three traps, and the first two
+are why the check above this paragraph is written the way it is. A local
+`git hash-object` compares your branch against the default branch and never sees
+the merge ref, so an old branch that touched nothing shows unequal hashes and
+still reviews. Equal hashes are worth having; unequal ones prove nothing. And in
+a shell, an unquoted URL containing `?` is a glob: under zsh
+`gh api repos/o/r/contents/f.yml?ref=main` dies with `no matches found`, the
+variable comes back empty, and an empty-against-empty comparison reports
+IDENTICAL - a fail-open on the exact check meant to prevent merging an
+unreviewed PR. Quote the URL, and treat an empty hash as gate closed.
+
 
 **Reviewer login.** Default is `claude[bot]`, but the action posts under a
 different account when the workflow overrides `github_token` (commonly
