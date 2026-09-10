@@ -20,8 +20,7 @@ command and will fail with "Unknown command".
 Copilot always submits a review summary, even "I reviewed your changes and
 found no new comments". That event is the merge authorisation.
 
-Claude on GitHub does not do this. Observed behaviour on a real PR
-(`OmnicodeSolutions/bora-turma#30`):
+Claude on GitHub does not do this. Observed behaviour on a real PR:
 
 | | Copilot | Claude Code Review |
 |---|---|---|
@@ -170,20 +169,19 @@ a change to the review workflow, **every open PR whose branch predates it stops
 being reviewed** - silently, with green checks. Nobody edited those PRs; the
 ground moved under them.
 
-Measured on `OmnicodeSolutions/platform-infrastructure`, where PR #44 changed
-the workflow on `main`:
+Measured on a repository where one merged PR changed the workflow on `main`:
 
 ```
-main                     blob 8e38de32
-branches of #39,#43,#45  blob 8d40b02e
+main                  blob 8e38de32
+three open branches   blob 8d40b02e
 ```
 
-Three open PRs, all diverging, all self-skipping. `#43` and `#39` show
-`claude-review` green with zero reviews and zero comments - indistinguishable
-from a clean review unless you read the log. On
-`AxiomGovernance/platform#31` the same shape ran further: 62 files, 7513
-insertions, **five** green runs across five SHAs, every one self-skipped, and
-the PR was about to be used in a demo as reviewed code.
+All three diverged, all self-skipped. Two of them showed `claude-review` green
+with zero reviews and zero comments - indistinguishable from a clean review
+unless you read the log. On another repository the same shape ran further: a PR
+of 62 files and 7513 insertions accumulated **five** green runs across five
+SHAs, every one self-skipped, and was about to be used in a demo as reviewed
+code.
 
 **Step 3 already catches this - do not add a per-cycle hash check.** A
 self-skipped run is `success` with the marker in its log, and Step 3 greps for
@@ -452,9 +450,9 @@ Two things follow for reading the table:
   reviewer would reach for a file it cannot see from the diff.
 
 **A separate finding, still open.** Review depth does not scale with PR size.
-`MarcaCerta/marcacerta#23` - 84 files, 9027 insertions - was reviewed in 7
-turns and 22 seconds and produced zero findings, including a residue its own
-author had documented. A one-file markdown PR on this repo took 23 turns. If
+A PR of 84 files and 9027 insertions was reviewed in 7 turns and 22 seconds
+and produced zero findings, including a residue its own author had documented.
+A one-file markdown PR on this repo took 23 turns. If
 the reviewer is reading shallowly, the allowlist is one suspect and
 `fetch-depth: 1` in the checkout step is another: with no history the reviewer
 cannot compare against the base or follow how a file got that way. Neither has
@@ -786,10 +784,10 @@ not:
   `fetch-depth`, no reviewer of any depth catches it. Running the image
   catches it in one try, and the check would have been green with it inside.
 - **It does not say the review was thorough.** Depth does not track PR size.
-  `MarcaCerta/marcacerta#23`, 84 files and 9027 insertions, was reviewed in 7
-  turns and 22 seconds with zero findings, missing a residue its own author had
-  documented. An 11-file infrastructure PR on another repo took 9 turns and
-  found a real cross-file bug. Size predicts nothing.
+  A PR of 84 files and 9027 insertions was reviewed in 7 turns and 22 seconds
+  with zero findings, missing a residue its own author had documented. An
+  11-file infrastructure PR elsewhere took 9 turns and found a real cross-file
+  bug. Size predicts nothing.
 - **It does not transfer judgement.** The gate is a floor, not a verdict. It
   stops the specific failure of merging on silence; it does not decide that
   merging is a good idea.
