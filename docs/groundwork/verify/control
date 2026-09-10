@@ -1,0 +1,280 @@
+#!/bin/sh
+# Verification CLI for mauriciovieira/skills.
+#
+# This repository ships documents, not a running service, so `launch` and
+# `clean` are close to no-ops and say so rather than inventing ceremony. What
+# there IS to verify is the contract in CLAUDE.md, which nothing checks today: a
+# skill is only usable if it is registered where an agent looks for it, and only
+# private if it is registered nowhere.
+#
+# Contract (from the groundwork verify skill):
+#   - launch / doctor / drive / prove / clean all exist
+#   - anything destructive takes --dry-run and prints what it would do
+#   - every subcommand supports --json
+#   - errors say what failed, what was expected, and what to try next
+set -eu
+
+DRY_RUN=0
+JSON=0
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+EVIDENCE_DIR="$HERE/evidence"
+ROOT=$(CDPATH= cd -- "$HERE/../../.." && pwd)
+
+# Buckets whose skills MUST be listed in the two READMEs and in plugin.json,
+# and buckets whose skills must appear in none of them. CLAUDE.md is the source
+# of this split; keep them in step.
+PUBLISHED="engineering productivity misc"
+UNPUBLISHED="personal in-progress"
+
+die() {
+    printf 'error: %s\n' "$1" >&2
+    [ $# -gt 1 ] && printf 'expected: %s\n' "$2" >&2
+    exit 1
+}
+
+usage() {
+    cat <<'USAGE'
+Usage: ./control <command> [options]
+
+Commands:
+  launch            no-op here - this repository has nothing to start
+  doctor            check the tools the other commands need
+  drive <skill>     run every structural check for one skill ("all" sweeps them)
+  prove <skill>     same, capturing the output into evidence/
+  clean             remove evidence/
+
+Options:
+  --dry-run   print what would happen, change nothing
+  --json      machine-readable output
+  --help      this text
+
+Examples:
+  ./control doctor
+  ./control drive babysit-with-claude-review
+  ./control drive all --json
+USAGE
+}
+
+CMD=""
+ARG=""
+for a in "$@"; do
+    case "$a" in
+        --dry-run) DRY_RUN=1 ;;
+        --json) JSON=1 ;;
+        -h|--help) usage; exit 0 ;;
+        -*) die "unknown option: $a" "one of --dry-run, --json, --help" ;;
+        *) if [ -z "$CMD" ]; then CMD="$a"; else ARG="$a"; fi ;;
+    esac
+done
+[ -n "$CMD" ] || { usage; exit 2; }
+
+# Every check appends one "<check>\t<ok|FAIL|skip>\t<detail>" line here.
+RESULTS=$(mktemp)
+trap 'rm -f "$RESULTS"' EXIT
+record() { printf '%s\t%s\t%s\n' "$1" "$2" "${3:-}" >> "$RESULTS"; }
+
+# Where a skill lives, as "<bucket>/<name>"; empty when there is no such skill.
+locate() {
+    for b in $PUBLISHED $UNPUBLISHED; do
+        [ -f "$ROOT/skills/$b/$1/SKILL.md" ] && { printf '%s/%s' "$b" "$1"; return 0; }
+    done
+    return 0
+}
+
+frontmatter_name() {
+    sed -n '2,20p' "$1" | sed -n 's/^name:[[:space:]]*//p' | head -1
+}
+
+check_skill() {
+    name=$1
+    rel=$(locate "$name")
+    [ -n "$rel" ] || die "no skill named '$name'" \
+        "a directory under skills/<bucket>/ containing SKILL.md"
+    bucket=${rel%%/*}
+    md="$ROOT/skills/$rel/SKILL.md"
+
+    published=no
+    for b in $PUBLISHED; do [ "$b" = "$bucket" ] && published=yes; done
+
+    # Identity. A frontmatter name that disagrees with the directory makes the
+    # skill uninvocable under the name everything else refers to it by.
+    fm=$(frontmatter_name "$md")
+    if [ "$fm" = "$name" ]; then
+        record identity ok "name: $fm"
+    else
+        record identity FAIL "frontmatter says '${fm:-<missing>}', directory says '$name'"
+    fi
+
+    if sed -n '2,40p' "$md" | grep -q '^description:'; then
+        record description ok
+    else
+        record description FAIL "no description: line in the frontmatter"
+    fi
+
+    # Registration. Three places for a published skill, none for a private one.
+    # The parentheses of the markdown link must be ESCAPED: unescaped they are
+    # ERE grouping, so the pattern matches a link with no parentheses at all -
+    # which nothing is - and every registered skill reports as missing.
+    top_re="\\[$name\\]\\(\\./skills/$bucket/$name/SKILL\\.md\\)"
+    bucket_re="\\[$name\\]\\(\\./$name/SKILL\\.md\\)"
+
+    if grep -qE "$top_re" "$ROOT/README.md"; then top=yes; else top=no; fi
+    if [ -f "$ROOT/skills/$bucket/README.md" ] \
+        && grep -qE "$bucket_re" "$ROOT/skills/$bucket/README.md"; then bkt=yes; else bkt=no; fi
+    if python3 -c "
+import json, sys
+j = json.load(open('$ROOT/.claude-plugin/plugin.json'))
+sys.exit(0 if './skills/$bucket/$name' in j.get('skills', []) else 1)" 2>/dev/null
+    then plg=yes; else plg=no; fi
+
+    if [ "$published" = yes ]; then
+        [ "$top" = yes ] && record readme-top ok \
+            || record readme-top FAIL "not linked in README.md"
+        [ "$bkt" = yes ] && record readme-bucket ok \
+            || record readme-bucket FAIL "not linked in skills/$bucket/README.md"
+        [ "$plg" = yes ] && record plugin-json ok \
+            || record plugin-json FAIL "./skills/$bucket/$name missing from plugin.json"
+    else
+        # The inverse contract, and the one worth automating: a private skill
+        # leaks by being ADDED somewhere, which no amount of reading the diff of
+        # the skill itself would catch.
+        [ "$top" = no ] && record readme-top ok "unpublished, correctly absent" \
+            || record readme-top FAIL "$bucket/ skill is listed in README.md"
+        [ "$plg" = no ] && record plugin-json ok "unpublished, correctly absent" \
+            || record plugin-json FAIL "$bucket/ skill is listed in plugin.json"
+    fi
+
+    # NOTE, never FAIL. ASCII-punctuation is an authoring rule for what is
+    # written HERE; most of this repository is upstream skills vendored
+    # verbatim, and rewriting their punctuation would break the mirror they
+    # exist to be. The repo's own CLAUDE.md uses em dashes, which settles it:
+    # this is not this repository's contract. Reported so it is visible on a
+    # skill you wrote, gating nothing.
+    if command -v deslop >/dev/null 2>&1; then
+        if deslop --check "$md" >/dev/null 2>&1; then
+            record ascii-punctuation ok
+        else
+            n=$(deslop --check "$md" 2>&1 | grep -c ':' || true)
+            record ascii-punctuation note "$n non-ASCII punctuation glyph(s) - fine if vendored"
+        fi
+    else
+        record ascii-punctuation skip "deslop not on PATH"
+    fi
+
+    # A skill that ships its own test owns the meaning of "works" for itself.
+    # Running it here is what makes editing a SKILL.md without its test fail.
+    tests=$(find "$ROOT/skills/$rel" -name '*.sh' -path '*test*' 2>/dev/null || true)
+    if [ -z "$tests" ]; then
+        record own-tests skip "none"
+    else
+        for t in $tests; do
+            if out=$(cd "$ROOT" && bash "$t" 2>&1); then
+                record own-tests ok "$(basename "$t"): $(printf '%s' "$out" | tail -1)"
+            else
+                record own-tests FAIL "$(basename "$t"): $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
+            fi
+        done
+    fi
+}
+
+all_skills() {
+    for b in $PUBLISHED $UNPUBLISHED; do
+        [ -d "$ROOT/skills/$b" ] || continue
+        for d in "$ROOT/skills/$b"/*/; do
+            [ -f "$d/SKILL.md" ] || continue
+            basename "$d"
+        done
+    done
+}
+
+report() {
+    subject=$1
+    fails=$(grep -c "	FAIL	" "$RESULTS" || true)
+    if [ "$JSON" -eq 1 ]; then
+        python3 - "$RESULTS" "$subject" "$fails" <<'PY'
+import json, sys
+rows = []
+for line in open(sys.argv[1]):
+    parts = line.rstrip("\n").split("\t")
+    if len(parts) >= 2:
+        rows.append({"check": parts[0], "status": parts[1],
+                     "detail": parts[2] if len(parts) > 2 else ""})
+print(json.dumps({"subject": sys.argv[2], "failures": int(sys.argv[3]),
+                  "checks": rows}, indent=2))
+PY
+    else
+        while IFS="$(printf '\t')" read -r c s d; do
+            printf '  %-22s %-5s %s\n' "$c" "$s" "$d"
+        done < "$RESULTS"
+        echo
+        if [ "$fails" -eq 0 ]; then
+            printf '%s: all checks passed\n' "$subject"
+        else
+            printf '%s: %s check(s) FAILED\n' "$subject" "$fails"
+        fi
+    fi
+    [ "$fails" -eq 0 ] || return 1
+}
+
+case "$CMD" in
+    launch)
+        msg="nothing to launch - this repository ships documents, not a service"
+        [ "$JSON" -eq 1 ] && printf '{"status":"noop","message":"%s"}\n' "$msg" || echo "$msg"
+        exit 0
+        ;;
+    doctor)
+        for t in python3 bash git; do
+            command -v "$t" >/dev/null 2>&1 && record "$t" ok "$(command -v "$t")" \
+                || record "$t" FAIL "not on PATH"
+        done
+        command -v deslop >/dev/null 2>&1 && record deslop ok "$(command -v deslop)" \
+            || record deslop skip "not on PATH - typography checks will be skipped"
+        [ -f "$ROOT/.claude-plugin/plugin.json" ] && record plugin-json ok \
+            || record plugin-json FAIL "not found at $ROOT/.claude-plugin/plugin.json"
+        if python3 -c "import json; json.load(open('$ROOT/.claude-plugin/plugin.json'))" 2>/dev/null
+        then record plugin-json-parses ok
+        else record plugin-json-parses FAIL "plugin.json is not valid JSON"
+        fi
+        report doctor
+        ;;
+    drive|prove)
+        [ -n "$ARG" ] || die "$CMD needs a skill name" \
+            "./control $CMD <skill>   (or 'all' to sweep every skill)"
+        if [ "$CMD" = prove ] && [ "$DRY_RUN" -eq 1 ]; then
+            echo "would run the same checks as drive and write the output to $EVIDENCE_DIR"
+            exit 0
+        fi
+        if [ "$ARG" = all ]; then
+            rc=0
+            for s in $(all_skills); do
+                : > "$RESULTS"
+                [ "$JSON" -eq 1 ] || printf '\n%s\n' "$s"
+                check_skill "$s"
+                report "$s" || rc=1
+            done
+            exit $rc
+        fi
+        check_skill "$ARG"
+        if [ "$CMD" = prove ]; then
+            mkdir -p "$EVIDENCE_DIR"
+            f="$EVIDENCE_DIR/$ARG-$(date -u +%Y%m%dT%H%M%SZ).txt"
+            report "$ARG" > "$f" 2>&1 || true
+            cat "$f"
+            echo
+            echo "evidence: $f"
+            echo "(scratch and gitignored - paste the lines above into the PR or issue)"
+            grep -q "	FAIL	" "$RESULTS" && exit 1
+            exit 0
+        fi
+        report "$ARG"
+        ;;
+    clean)
+        if [ "$DRY_RUN" -eq 1 ]; then
+            echo "would remove $EVIDENCE_DIR"
+            exit 0
+        fi
+        rm -rf "$EVIDENCE_DIR"
+        echo "removed $EVIDENCE_DIR"
+        ;;
+    *) die "unknown command: $CMD" "one of launch, doctor, drive, prove, clean" ;;
+esac

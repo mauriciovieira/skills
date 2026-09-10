@@ -1,0 +1,7 @@
+{
+  "docs_dir": "docs/groundwork",
+  "verify": {
+    "cli": "verify/control",
+    "evidence_dir": "verify/evidence"
+  }
+}

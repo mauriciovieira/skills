@@ -2,3 +2,6 @@
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 node_modules/
+
+# groundwork verify scratch - the proof of record is the pasted output
+docs/groundwork/verify/evidence/
