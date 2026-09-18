@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.12] - 2026-09-18
+
+### Added
+
+- ship grill-stop Stop hook with the skill ([#22](https://github.com/mauriciovieira/skills/pull/22))
+
 ## [0.2.11] - 2026-09-10
 
 ### Added
