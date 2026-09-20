@@ -4,7 +4,7 @@ A skill that ships a test still passes it after the skill is edited.
 
 ## What exists today
 
-Two skills ship an executable test. `babysit-with-claude-review/test/verdict.sh` is 11
+Three skills ship an executable test. `babysit-with-claude-review/test/verdict.sh` is 11
 assertions over trimmed real run logs, plus drift checks asserting that the gate conditions
 it tests still appear in `SKILL.md`. Editing the prose without the test, or the test without
 the prose, fails it. `grilling/test/run.sh` is a three-line wrapper around
@@ -15,7 +15,11 @@ Nothing ran it. Not CI, not the review workflow, not a pre-commit hook. It passe
 only when someone remembered to type `bash test/verdict.sh` - which, on the change that
 prompted this whole asset, nobody did until after the pull request was open.
 
-`control` runs any `*.sh` under a `test` path inside the skill's directory, so a second skill
+`review-with-jev/test/run.sh` is 38 assertions over `evidence-guard.sh`, the deterministic path
+filter that decides what leaves the machine for a third-party API, plus drift checks asserting
+that `SKILL.md` still names the guard, the env var and its policy version.
+
+`control` runs any `*.sh` under a `test` path inside the skill's directory, so a further skill
 that grows a test is picked up with no change here - which is what happened with `grilling`,
 and why its Python test ships behind a `run.sh` wrapper rather than teaching `control` a
 second language.
@@ -47,5 +51,5 @@ Appending `exit 1` to the end of `verdict.sh` does NOT fail it - the script ends
 `exit "$fail"`, so anything after that is unreachable. Worth knowing before trusting a
 hand-rolled check of the checker.
 
-42 of 44 skills have no test at all. This check does not pretend otherwise; it reports `skip`,
+42 of 45 skills have no test at all. This check does not pretend otherwise; it reports `skip`,
 and a `skip` is not evidence of anything.
