@@ -90,6 +90,11 @@ check "SKILL.md names the env var" "0" "$?"
 grep -q 'review-with-jev-policy@1' "$SKILL"
 check "SKILL.md versions its policy" "0" "$?"
 
+# The stopping rule must not key off the score. Real validation put correctness at
+# 7.8 and security at 7.9 after a fix, which a ">= 8" rule would have kept looping on.
+grep -q 'never a target to reach' "$SKILL"
+check "stop rule does not chase the score" "0" "$?"
+
 total=$((pass + fail))
 if [ "$fail" -eq 0 ]; then
   echo "$pass/$total OK"

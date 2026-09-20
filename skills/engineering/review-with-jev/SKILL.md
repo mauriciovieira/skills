@@ -211,7 +211,11 @@ warrants `testQuality`, `correctness` and maybe `maintainability` - not all nine
 
 Stop at the first of these:
 
-- Every routed dimension is at or above 8, or its weakness is `INFORMATIONAL`.
+- No routed dimension still carries an upstream priority above `low`, and none is classified
+  `BLOCKING` or `INVESTIGATE`. **Do not stop on the score itself.** The `< 8` cut is upstream's
+  rule for *ranking* priorities; it is never a target to reach. A routed dimension sitting at
+  7.8 with a `low` priority is noise, and one more round chasing 0.2 is the score-chasing this
+  skill exists to prevent.
 - The remaining findings need evidence that is not in the diff. Say so and stop; that is a
   finding, not a failure.
 - The initial pass plus two fix-and-re-evaluate rounds. A third round almost never changes
