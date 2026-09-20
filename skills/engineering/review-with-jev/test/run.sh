@@ -55,6 +55,27 @@ do
   check "variant: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
 done
 
+# A trailing suffix must not defeat the match. ".example" on a key file reads
+# as safe to a human skimming the output, and the file can still hold a live
+# key - so only the .env family gets the sample carve-out, nothing else.
+for p in \
+  config.pem.example \
+  my_key.pem.sample \
+  server.key.template \
+  keystore.jks.bak \
+  .npmrc.example \
+  .secrets/prod.yml \
+  team.secrets/db.yml
+do
+  check "suffixed: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
+# Ordinary source that merely rhymes with a credential must still pass.
+for p in src/monkey.ts src/keyboard.ts src/secretsManager.ts src/credentialsProvider.ts
+do
+  check "not secret: $p" "include $p" "$(verdict "$p")"
+done
+
 # A credential-shaped path must also make the script exit loudly.
 bash "$GUARD" src/main.ts .env >/dev/null 2>&1
 check "secret sets exit 2" "2" "$?"

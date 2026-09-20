@@ -34,7 +34,8 @@ classify() {
   base="${p##*/}"
 
   case "/$p/" in
-    */.ssh/*|*/.aws/*|*/.gnupg/*|*/secrets/*) echo "$SECRET_REASON"; return ;;
+    */.ssh/*|*/.aws/*|*/.gnupg/*) echo "$SECRET_REASON"; return ;;
+    */secrets/*|*.secrets/*) echo "$SECRET_REASON"; return ;;
   esac
 
   # Sample/example/template env files are fine: they exist to be read and hold
@@ -46,13 +47,18 @@ classify() {
     .env|.env.*|*.env) echo "$SECRET_REASON"; return ;;
   esac
 
-  # Matched with the prefixes and suffixes these files actually carry in the
-  # wild: prod.credentials.json, credentials.json.bak, app.npmrc, id_rsa.old.
-  # Exact basenames here were a leak - every one of those read as "include".
+  # Matched with the prefixes AND trailing suffixes these files carry in the
+  # wild: prod.credentials.json, credentials.json.bak, app.npmrc, id_rsa.old,
+  # config.pem.example. Anchoring on the last extension was a leak - any
+  # trailing suffix defeated it, and ".example" on a key file reads as safe to
+  # a human skimming the output while the file can still hold a live key.
+  # The .env family above is the one deliberate carve-out: it is a documented,
+  # ubiquitous convention. Nothing else gets one.
   case "$base" in
     id_rsa*|id_dsa*|id_ecdsa*|id_ed25519*) echo "$SECRET_REASON"; return ;;
-    *.pem|*.p12|*.pfx|*.key|*.jks|*.keystore|*.kdbx) echo "$SECRET_REASON"; return ;;
-    .npmrc|*.npmrc|.pypirc|*.pypirc|.netrc|*.netrc) echo "$SECRET_REASON"; return ;;
+    *.pem*|*.p12*|*.pfx*|*.key*|*.jks*) echo "$SECRET_REASON"; return ;;
+    *.keystore*|*.kdbx*) echo "$SECRET_REASON"; return ;;
+    *npmrc*|*pypirc*|*netrc*) echo "$SECRET_REASON"; return ;;
     *credentials|*credentials.*) echo "$SECRET_REASON"; return ;;
     secrets|secrets.*|*.secrets|*.secrets.*) echo "$SECRET_REASON"; return ;;
   esac
