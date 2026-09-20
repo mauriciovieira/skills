@@ -100,15 +100,35 @@ the repo conventions that bear on the routed dimensions.
 **Never include:** anything `evidence-guard.sh` excludes, plus unrelated files, whole-repo
 dumps, dependency trees, production data, or customer content.
 
-Run the guard over the file list before every call:
+Run the guard over the file list before every call. It ships beside this file, so resolve it
+once from wherever the skill was installed:
 
 ```sh
-git diff --name-only <base>...HEAD | bash evidence-guard.sh
+GUARD=$(ls ~/.claude/skills/review-with-jev/evidence-guard.sh \
+           ~/.agents/skills/review-with-jev/evidence-guard.sh \
+           ~/.claude/plugins/*/*/skills/engineering/review-with-jev/evidence-guard.sh \
+           2>/dev/null | head -1)
+```
+
+Feed it every path the evidence could draw on, not just the committed ones. A checkpoint
+mid-slice has uncommitted and untracked files, and a freshly dropped `.env` is untracked -
+which is precisely the case the guard exists for:
+
+```sh
+{ git diff --name-only <base>...HEAD
+  git diff --name-only
+  git ls-files --others --exclude-standard; } | sort -u | bash "$GUARD"
 ```
 
 It prints `include <path>` or `exclude <path> <reason>` per path, and exits 2 if anything
 credential-shaped appeared. **Report what you excluded and why.** A silent drop is
 indistinguishable from an oversight.
+
+If the guard is not on disk, apply the exclusion list by hand and say that you did - never skip
+the step because the script was not found.
+
+Match the `diff` you send to the same scope. `git diff <base>...HEAD` is the pull-request shape
+and belongs in `final`; a `quick` checkpoint on unfinished work wants the working tree too.
 
 Caps, adopted from upstream's staged workflows: split any hunk over ~300 lines rather than
 sending it whole, cap related tests at 4 files compacted to the relevant `describe`/`it`
@@ -194,7 +214,9 @@ Stop at the first of these:
 - Every routed dimension is at or above 8, or its weakness is `INFORMATIONAL`.
 - The remaining findings need evidence that is not in the diff. Say so and stop; that is a
   finding, not a failure.
-- Three calls on the same change. A fourth almost never changes the implementation.
+- The initial pass plus two fix-and-re-evaluate rounds. A third round almost never changes
+  the implementation. (`deep` spends its initial pass over 2-3 evidence cuts; that is still
+  the initial pass.)
 - **The input, not the code, is the problem.** If most routed dimensions come back weak with
   low confidence, or the judgments read as generic, your `task` text or evidence package is too
   thin. Fix the input once and re-run. Do not run a third time on the same thin input, and do

@@ -73,6 +73,10 @@ done
 check "not secret: src/secretsManager.ts" "include src/secretsManager.ts" \
       "$(verdict src/secretsManager.ts)"
 
+# --- decoration from git wrappers is skipped, not classified ----------------
+out="$(printf -- '--- Changes ---\nsrc/a.ts\n' | bash "$GUARD" 2>/dev/null)"
+check "decoration skipped" "include src/a.ts" "$out"
+
 # --- stdin mode matches argument mode ---------------------------------------
 out="$(printf 'src/a.ts\n.env\n' | bash "$GUARD" 2>/dev/null)"
 check "stdin lines" "include src/a.ts

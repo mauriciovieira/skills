@@ -16,6 +16,13 @@
 #
 # Exit 0 - nothing credential-shaped in the list.
 # Exit 2 - at least one credential-shaped path. Loud on purpose.
+#
+# Feed it the working tree and untracked files too, not just the committed diff:
+# a freshly dropped .env is untracked, which is the case this exists for.
+#
+# Kind is decided by path shape alone, so a repo where build/ or vendor/ holds real
+# source will see those excluded. That is why every exclusion prints its reason:
+# the caller can see the call and override it deliberately.
 set -uo pipefail
 
 kind_of() {
@@ -70,6 +77,9 @@ found_secret=0
 handle() {
   local p="$1" kind
   [ -n "$p" ] || return 0
+  # Skip decoration rather than classifying it as a file. No real path starts
+  # with "-", and some git wrappers prefix their output with a header line.
+  case "$p" in -*) return 0 ;; esac
   kind="$(kind_of "$p")"
   if [ "$kind" = include ]; then
     echo "include $p"
