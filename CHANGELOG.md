@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.13] - 2026-09-20
+
+### Added
+
+- orchestrate the Jev MCP tool without forking it ([#23](https://github.com/mauriciovieira/skills/pull/23))
+
+### Fixed
+
+- make the evidence guard reachable and complete ([#23](https://github.com/mauriciovieira/skills/pull/23))
+- stop on priority severity, not on the score ([#23](https://github.com/mauriciovieira/skills/pull/23))
+- guard let real credential filenames through ([#23](https://github.com/mauriciovieira/skills/pull/23))
+- a trailing suffix no longer defeats the guard ([#23](https://github.com/mauriciovieira/skills/pull/23))
+
 ## [0.2.12] - 2026-09-18
 
 ### Added
