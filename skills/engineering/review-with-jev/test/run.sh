@@ -40,6 +40,21 @@ do
   check "secret: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
 done
 
+# Real-world prefixed and suffixed variants. Exact-basename matching let every
+# one of these through as "include" until the Standards review caught it.
+for p in \
+  prod.credentials.json \
+  credentials.json.bak \
+  service-account-credentials.json \
+  app.npmrc \
+  build.netrc \
+  id_rsa.bak \
+  id_ed25519.old \
+  deploy.secrets.json
+do
+  check "variant: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
 # A credential-shaped path must also make the script exit loudly.
 bash "$GUARD" src/main.ts .env >/dev/null 2>&1
 check "secret sets exit 2" "2" "$?"
@@ -72,10 +87,13 @@ done
 # A path that merely mentions a keyword is not credential-shaped.
 check "not secret: src/secretsManager.ts" "include src/secretsManager.ts" \
       "$(verdict src/secretsManager.ts)"
+check "not secret: src/credentialsProvider.ts" "include src/credentialsProvider.ts" \
+      "$(verdict src/credentialsProvider.ts)"
 
 # --- decoration from git wrappers is skipped, not classified ----------------
 out="$(printf -- '--- Changes ---\nsrc/a.ts\n' | bash "$GUARD" 2>/dev/null)"
-check "decoration skipped" "include src/a.ts" "$out"
+check "decoration reported, not dropped" "skip --- Changes --- not a path
+include src/a.ts" "$out"
 
 # --- stdin mode matches argument mode ---------------------------------------
 out="$(printf 'src/a.ts\n.env\n' | bash "$GUARD" 2>/dev/null)"

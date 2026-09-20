@@ -23,71 +23,71 @@
 # Kind is decided by path shape alone, so a repo where build/ or vendor/ holds real
 # source will see those excluded. That is why every exclusion prints its reason:
 # the caller can see the call and override it deliberately.
-set -uo pipefail
+set -u
 
-kind_of() {
+SECRET_REASON="credential-shaped path"
+
+# Echoes the exclusion reason, or "include". One switch, not two: an earlier
+# version returned a bare kind that a second switch re-mapped to this prose.
+classify() {
   local p="$1" base
   base="${p##*/}"
 
-  # Credential-shaped path segments.
   case "/$p/" in
-    */.ssh/*|*/.aws/*|*/.gnupg/*|*/secrets/*) echo secret; return ;;
+    */.ssh/*|*/.aws/*|*/.gnupg/*|*/secrets/*) echo "$SECRET_REASON"; return ;;
   esac
 
-  # Credential-shaped filenames. Sample/example/template env files are fine:
-  # they exist to be read and carry no live value.
+  # Sample/example/template env files are fine: they exist to be read and hold
+  # no live value. The carve-out stops at the .env family on purpose - a file
+  # called secrets.db.example stays excluded, because over-excluding costs one
+  # printed line and under-excluding ships a credential to a third party.
   case "$base" in
     *.example|*.sample|*.template) ;;
-    .env|.env.*|*.env) echo secret; return ;;
+    .env|.env.*|*.env) echo "$SECRET_REASON"; return ;;
   esac
+
+  # Matched with the prefixes and suffixes these files actually carry in the
+  # wild: prod.credentials.json, credentials.json.bak, app.npmrc, id_rsa.old.
+  # Exact basenames here were a leak - every one of those read as "include".
   case "$base" in
-    id_rsa|id_dsa|id_ecdsa|id_ed25519) echo secret; return ;;
-    *.pem|*.p12|*.pfx|*.key|*.jks|*.keystore|*.kdbx) echo secret; return ;;
-    .npmrc|.pypirc|.netrc|credentials.json|secrets.*) echo secret; return ;;
+    id_rsa*|id_dsa*|id_ecdsa*|id_ed25519*) echo "$SECRET_REASON"; return ;;
+    *.pem|*.p12|*.pfx|*.key|*.jks|*.keystore|*.kdbx) echo "$SECRET_REASON"; return ;;
+    .npmrc|*.npmrc|.pypirc|*.pypirc|.netrc|*.netrc) echo "$SECRET_REASON"; return ;;
+    *credentials|*credentials.*) echo "$SECRET_REASON"; return ;;
+    secrets|secrets.*|*.secrets|*.secrets.*) echo "$SECRET_REASON"; return ;;
   esac
 
   case "/$p" in
-    */node_modules/*|*/vendor/*|*/third_party/*|*/.venv/*|*/venv/*) echo vendored; return ;;
-    */dist/*|*/build/*|*/.next/*|*/coverage/*|*/__pycache__/*) echo generated; return ;;
+    */node_modules/*|*/vendor/*|*/third_party/*|*/.venv/*|*/venv/*) echo "vendored dependency"; return ;;
+    */dist/*|*/build/*|*/.next/*|*/coverage/*|*/__pycache__/*) echo "generated output"; return ;;
   esac
 
   case "$base" in
-    *.min.js|*.min.css|*.map|*_pb2.py|*.pb.go|*.generated.*) echo generated; return ;;
+    *.min.js|*.min.css|*.map|*_pb2.py|*.pb.go|*.generated.*) echo "generated output"; return ;;
     package-lock.json|yarn.lock|pnpm-lock.yaml|Cargo.lock|Gemfile.lock) echo lockfile; return ;;
     poetry.lock|composer.lock|go.sum|uv.lock) echo lockfile; return ;;
-    *.png|*.jpg|*.jpeg|*.gif|*.webp|*.ico|*.pdf|*.zip|*.tar|*.gz) echo binary; return ;;
-    *.mp4|*.mov|*.mp3|*.wav|*.woff|*.woff2|*.ttf|*.otf) echo binary; return ;;
-    *.so|*.dylib|*.dll|*.exe|*.jar|*.wasm|*.db|*.sqlite|*.sqlite3) echo binary; return ;;
+    *.png|*.jpg|*.jpeg|*.gif|*.webp|*.ico|*.pdf|*.zip|*.tar|*.gz) echo "binary file"; return ;;
+    *.mp4|*.mov|*.mp3|*.wav|*.woff|*.woff2|*.ttf|*.otf) echo "binary file"; return ;;
+    *.so|*.dylib|*.dll|*.exe|*.jar|*.wasm|*.db|*.sqlite|*.sqlite3) echo "binary file"; return ;;
   esac
 
   echo include
 }
 
-reason_for() {
-  case "$1" in
-    secret)    echo "credential-shaped path" ;;
-    binary)    echo "binary file" ;;
-    vendored)  echo "vendored dependency" ;;
-    generated) echo "generated output" ;;
-    lockfile)  echo "lockfile" ;;
-  esac
-}
-
 found_secret=0
 handle() {
-  local p="$1" kind
+  local p="$1" reason
   [ -n "$p" ] || return 0
-  # Skip decoration rather than classifying it as a file. No real path starts
-  # with "-", and some git wrappers prefix their output with a header line.
-  case "$p" in -*) return 0 ;; esac
-  kind="$(kind_of "$p")"
-  if [ "$kind" = include ]; then
+  # Decoration from a git wrapper is reported as skipped, never dropped in
+  # silence - the header promises nothing vanishes without a line.
+  case "$p" in -*) echo "skip $p not a path"; return 0 ;; esac
+  reason="$(classify "$p")"
+  if [ "$reason" = include ]; then
     echo "include $p"
   else
-    echo "exclude $p $(reason_for "$kind")"
-    [ "$kind" = secret ] && found_secret=2
+    echo "exclude $p $reason"
+    if [ "$reason" = "$SECRET_REASON" ]; then found_secret=2; fi
   fi
-  return 0
 }
 
 if [ "$#" -gt 0 ]; then

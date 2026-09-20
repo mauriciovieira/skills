@@ -73,11 +73,11 @@ comes back is `INFORMATIONAL` - recorded, not worked on.
 | Change shape | Act on |
 |---|---|
 | auth, session, permission, role, token, secret, password, cookie, crypto, redirect, `exec`, raw query | `correctness`, `security`, `reliability`, `testQuality` |
-| schema, migration, persistence | `correctness`, `reliability`, `compatibility`, `performance` |
+| schema, migration, persistence | `correctness`, `reliability`, `compatibility`, `performance` - state rollback safety and data integrity as invariants in `task`, since the tool has no dimension named for either |
 | public API, exported surface, published types | `correctness`, `compatibility`, `consistency`, `documentation`, `testQuality` |
 | concurrency, async, scheduling, locking | `correctness`, `reliability`, `testQuality`, `performance` |
 | bug fix | `correctness`, `reliability`, `testQuality` |
-| refactor with no behaviour change | `modularity`, `coupling`, `changeability`, `duplication`, `cognitiveComplexity`, `testQuality` |
+| refactor with no behaviour change | `correctness`, `modularity`, `coupling`, `changeability`, `duplication`, `cognitiveComplexity`, `testQuality` |
 | new feature | `correctness`, `testQuality`, `reliability`, `modularity`, `maintainability` |
 | config, infra, CI | `reliability`, `security`, `compatibility`, `observability` |
 | UI copy, docs, content | `consistency`, `documentation`, `correctness` - and explicitly **not** `security`, `scalability`, or `performance` |
@@ -87,6 +87,11 @@ call classifying a change whose shape you can already see. Use Jev for classific
 when the shape is genuinely ambiguous and the answer would change what you do.
 
 Two or more rows can apply - a migration behind an auth check is both. Union them.
+
+`correctness` is on every row on purpose: upstream defines it as "correctness and requirement
+fit", so it is the only dimension that carries requirement compliance. There is no separate
+one. A refactor row without it would check the shape of the code and never check that it
+still does what was asked, which is exactly where a silent behaviour change hides.
 
 ## 3. Assemble the evidence
 
@@ -176,6 +181,11 @@ A dimension is **weak** at `score < 8`, which is upstream's own priority cut. Th
 | `IMPROVEMENT` | a routed dimension is weak, you can name the cause, and the fix sits inside this change's blast radius | make the smallest justified change |
 | `INFORMATIONAL` | weak but outside the routed set, or reported `confidence < 0.5` | record it, act only if you were already there |
 | `NOT_APPLICABLE` | the metric came back `applicable: false` | report it as not judged - it is **not** a pass |
+
+`INVESTIGATE` the class and `investigate` the mode are not the same thing. The class says stop
+editing and go read the code, which you do in place. The mode is a separate entry point for when
+something has already failed and you want Jev to rank hypotheses you wrote. An `INVESTIGATE`
+finding does not mean re-enter in `investigate` mode; follow the loop in section 6.
 
 Inputs to the class, beyond the score: reported confidence, upstream's own dimension weight
 (`correctness` and `security` weigh 3; `cognitiveComplexity`, `modularity`, `coupling`,
