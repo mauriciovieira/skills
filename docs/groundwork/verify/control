@@ -50,7 +50,7 @@ Options:
 
 Examples:
   ./control doctor
-  ./control drive babysit-with-claude-review
+  ./control drive review-with-jev
   ./control drive all --json
 USAGE
 }

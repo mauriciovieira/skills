@@ -41,7 +41,7 @@ reports whether `deslop` is available (its absence downgrades one check, it does
 Run every structural check for one skill, or sweep them all:
 
 ```
-./control drive babysit-with-claude-review
+./control drive review-with-jev
 ./control drive all
 ./control drive all --json
 ```
