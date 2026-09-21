@@ -9,7 +9,7 @@ skill under a separate name instead of a fork.
 
 That buys the thing a fork would cost: upstream stays updateable, and the two skills coexist
 rather than one shadowing the other. The name follows the house `<verb>-with-<thing>` pattern
-(`grill-with-docs`, `babysit-with-claude-review`), which also happens to be exactly what a
+(`grill-with-docs`), which also happens to be exactly what a
 person types - "review this with Jev".
 
 ## What we took, and from where
