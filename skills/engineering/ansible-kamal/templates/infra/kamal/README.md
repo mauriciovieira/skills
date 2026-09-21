@@ -1,6 +1,6 @@
 # Kamal deployment (__APP_SERVICE__)
 
-Secrets, where they live (`pass` / `custom` vs GitHub), and how to create or rotate them.
+Secrets, where they live (your local secret manager vs GitHub), and how to create or rotate them.
 
 Related: [`../README.md`](../README.md), [`../ansible/README.md`](../ansible/README.md).
 
@@ -19,57 +19,70 @@ DB connectivity is to **PostgreSQL on the host**. Kamal sets `DATABASE_HOST=host
 
 | Store | Used for | Who reads it |
 |-------|----------|--------------|
-| **`pass` (local)** | Source of truth; copying values into GitHub; Ansible-only variables | You, on your machine |
+| **Local secret manager** | Source of truth; copying values into GitHub; Ansible-only variables | You, on your machine |
 | **GitHub Actions secrets** (Environments) | Kamal deploy in CI | GitHub Actions |
 
-## Suggested `pass` paths
+Nothing here assumes a particular manager. `make deploy`, `make db-restore-from-vps`
+and `make -C infra/ansible ansible` all read secrets by calling `$(SECRET_CMD)` with
+one secret name as its last argument and reading the value from stdout. Point
+`SECRET_CMD` at whatever you already use, wrapping it in a script if the lookup
+needs more than a plain command:
 
-Namespace: `__PASS_NAMESPACE__`.
+```sh
+# bin/secret - called as: bin/secret __SECRET_NAMESPACE__/rails_master_key_production
+#!/usr/bin/env bash
+set -euo pipefail
+your-secret-manager read "$1"
+```
+
+## Secret names
+
+Namespace: `__SECRET_NAMESPACE__`.
 
 ### PostgreSQL (host — aligns with Ansible role)
 
 | Path | Purpose |
 |------|---------|
-| `__PASS_NAMESPACE__/postgres___APP_SLUG___prod_password` | Password for `__APP_SLUG___prod_user` / DB `__APP_SLUG___production` |
+| `__SECRET_NAMESPACE__/postgres___APP_SLUG___prod_password` | Password for `__APP_SLUG___prod_user` / DB `__APP_SLUG___production` |
 <!-- >>> staging-only -->
-| `__PASS_NAMESPACE__/postgres___APP_SLUG___staging_password` | Password for `__APP_SLUG___staging_user` / DB `__APP_SLUG___staging` |
+| `__SECRET_NAMESPACE__/postgres___APP_SLUG___staging_password` | Password for `__APP_SLUG___staging_user` / DB `__APP_SLUG___staging` |
 <!-- <<< staging-only -->
 
 ### Rails master keys (per environment)
 
 | Path | Purpose |
 |------|---------|
-| `__PASS_NAMESPACE__/rails_master_key_production` | `RAILS_MASTER_KEY` for production credentials |
+| `__SECRET_NAMESPACE__/rails_master_key_production` | `RAILS_MASTER_KEY` for production credentials |
 <!-- >>> staging-only -->
-| `__PASS_NAMESPACE__/rails_master_key_staging` | `RAILS_MASTER_KEY` for staging credentials |
+| `__SECRET_NAMESPACE__/rails_master_key_staging` | `RAILS_MASTER_KEY` for staging credentials |
 <!-- <<< staging-only -->
 
 ### Container registry (GHCR)
 
 | Path | Purpose |
 |------|---------|
-| `__PASS_NAMESPACE__/kamal_registry_username` | GHCR username or `oauth2`/bot |
-| `__PASS_NAMESPACE__/kamal_registry_password` | GHCR PAT with `read:packages` |
+| `__SECRET_NAMESPACE__/kamal_registry_username` | GHCR username or `oauth2`/bot |
+| `__SECRET_NAMESPACE__/kamal_registry_password` | GHCR PAT with `read:packages` |
 
 ### SSH (deploy user — separate from any root key)
 
 | Path | Purpose |
 |------|---------|
-| `__PASS_NAMESPACE__/deploy_ssh_private_key` | Private key for `__DEPLOY_USER__` (Kamal, CI, local) |
-| `__PASS_NAMESPACE__/deploy_ssh_public_key` | Public key — paste into bootstrap as `DEPLOY_SSH_KEY` |
-| `__PASS_NAMESPACE__/vps_root_ssh_private_key` | (Optional) Root key used only by you for bootstrap/emergency |
+| `__SECRET_NAMESPACE__/deploy_ssh_private_key` | Private key for `__DEPLOY_USER__` (Kamal, CI, local) |
+| `__SECRET_NAMESPACE__/deploy_ssh_public_key` | Public key - paste into bootstrap as `DEPLOY_SSH_KEY` |
+| `__SECRET_NAMESPACE__/vps_root_ssh_private_key` | (Optional) Root key used only by you for bootstrap/emergency |
 
 ### Optional app secrets
 
 | Path | Purpose |
 |------|---------|
-| `__PASS_NAMESPACE__/resend_api_key` | Mailer API key (shared across envs) |
+| `__SECRET_NAMESPACE__/resend_api_key` | Mailer API key (shared across envs) |
 
 ## GitHub Actions secrets
 
 Recommended: GitHub Environments `production`<!-- >>> staging-only --> and `staging`<!-- <<< staging-only -->, with the same logical secret names in each.
 
-| Secret | Source `pass` path |
+| Secret | Source secret name |
 |--------|--------------------|
 | `RAILS_MASTER_KEY` | `…/rails_master_key_production` (or `_staging`) |
 | `DATABASE_PASSWORD` | `…/postgres___APP_SLUG___prod_password` (or `_staging_`) |
@@ -77,11 +90,12 @@ Recommended: GitHub Environments `production`<!-- >>> staging-only --> and `stag
 | `KAMAL_REGISTRY_USERNAME` / `_PASSWORD` | `…/kamal_registry_username` / `_password` |
 | `DEPLOY_SSH_PRIVATE_KEY` | `…/deploy_ssh_private_key` (deploy private key, **not** root) |
 
-Populate from `pass`:
+Populate them. `gh secret set` with no `--body` prompts for the value, so nothing
+lands in your shell history; a key that lives in a file is redirected in:
 
 ```bash
-gh secret set RAILS_MASTER_KEY --env production --body "$(pass show __PASS_NAMESPACE__/rails_master_key_production)"
-gh secret set DEPLOY_SSH_PRIVATE_KEY < <(pass show __PASS_NAMESPACE__/deploy_ssh_private_key)
+gh secret set RAILS_MASTER_KEY --env production
+gh secret set DEPLOY_SSH_PRIVATE_KEY --env production < ./__DEPLOY_USER__-ed25519
 ```
 
 ## Generating values
@@ -95,14 +109,13 @@ EDITOR="vim" bin/rails credentials:edit --environment production
 
 # Deploy SSH key pair
 ssh-keygen -t ed25519 -f ./__DEPLOY_USER__-ed25519 -C "__APP_SERVICE__-kamal-deploy"
-pass insert -m __PASS_NAMESPACE__/deploy_ssh_private_key < __DEPLOY_USER__-ed25519
-pass insert -m __PASS_NAMESPACE__/deploy_ssh_public_key < __DEPLOY_USER__-ed25519.pub
+# Store both halves under the names above, then delete the local files.
 ```
 
 ## Operational checklist
 
-1. `pass` paths above filled.
-2. Bootstrap once as root: `DEPLOY_SSH_KEY="$(pass show __PASS_NAMESPACE__/deploy_ssh_public_key)" make -C infra/ansible bootstrap`.
+1. Secret names above filled in your manager, and `SECRET_CMD` resolving them.
+2. Bootstrap once as root: `DEPLOY_SSH_KEY="$($SECRET_CMD __SECRET_NAMESPACE__/deploy_ssh_public_key)" make -C infra/ansible bootstrap`.
 3. Site provision: `make -C infra/ansible ansible`.
 4. GitHub: environments + secrets.
 5. Local deploy:

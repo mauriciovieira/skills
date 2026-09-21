@@ -7,11 +7,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PASSWORD_STORE_DIR="${PASSWORD_STORE_DIR:-__PASS_STORE_DIR_SHELL__}"
-export PASSWORD_STORE_DIR
+# Command that prints the secret named by its last argument to stdout.
+SECRET_CMD="${SECRET_CMD:-__SECRET_CMD__}"
 
-pass_show() {
-  pass show "$1"
+# Unquoted on purpose: SECRET_CMD may carry fixed arguments ahead of the name.
+secret() {
+  $SECRET_CMD "$1"
 }
 
 require_cmd() {
@@ -21,7 +22,7 @@ require_cmd() {
   }
 }
 
-require_cmd pass
+require_cmd "${SECRET_CMD%% *}"
 require_cmd mktemp
 require_cmd pg_restore
 require_cmd psql
@@ -41,14 +42,14 @@ case "$ENV_RAW" in
   staging)
     SOURCE_DB_NAME="__APP_SLUG___staging"
     SOURCE_DB_USER="__APP_SLUG___staging_user"
-    SOURCE_DB_PASSWORD_PASS="__PASS_NAMESPACE__/postgres___APP_SLUG___staging_password"
+    SOURCE_DB_PASSWORD_NAME="__SECRET_NAMESPACE__/postgres___APP_SLUG___staging_password"
     CONFIRMATION="RESTORE staging INTO local"
     ;;
 # <<< staging-only
   production)
     SOURCE_DB_NAME="__APP_SLUG___production"
     SOURCE_DB_USER="__APP_SLUG___prod_user"
-    SOURCE_DB_PASSWORD_PASS="__PASS_NAMESPACE__/postgres___APP_SLUG___prod_password"
+    SOURCE_DB_PASSWORD_NAME="__SECRET_NAMESPACE__/postgres___APP_SLUG___prod_password"
     CONFIRMATION="RESTORE production INTO local"
     ;;
   *)
@@ -63,7 +64,7 @@ if [[ "$typed_confirmation" != "$CONFIRMATION" ]]; then
   exit 1
 fi
 
-DUMP_DB_PASSWORD="$(pass_show "$SOURCE_DB_PASSWORD_PASS")"
+DUMP_DB_PASSWORD="$(secret "$SOURCE_DB_PASSWORD_NAME")"
 
 mkdir -p .tmp
 umask 077

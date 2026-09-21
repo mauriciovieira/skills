@@ -13,15 +13,20 @@
 #   LETSENCRYPT_EMAIL e.g. admin@example.com
 #   DEPLOY_USER       e.g. myapp_deploy
 #   IMAGE_REPO        e.g. myorg/myapp
-#   PASS_BACKEND      custom|pass
-#   PASS_NAMESPACE    e.g. infra/myapp
+#   SECRET_CMD        command that prints a secret to stdout, e.g. './bin/secret'
+#   SECRET_NAMESPACE  prefix for every secret name, e.g. infra/myapp
 #   ENV_MODE          staging+production|single
 #   TARGET_DIR        path to project root
 #
 # Optional:
 #   DOMAIN_STAGING    required if ENV_MODE=staging+production; ignored otherwise
-#   PASS_STORE_DIR    e.g. '$(HOME)/.password-store-custom'  (Makefile-form, used as-is)
 #   FORCE             1 to overwrite existing infra/ansible
+#
+# SECRET_CMD contract: a command on PATH, optionally with fixed arguments, that
+# prints the secret named by its LAST argument to stdout and nothing else. It is
+# invoked as `$SECRET_CMD <namespace>/<name>`. No shell syntax, no $ expansion -
+# it is baked into a Makefile and into /bin/sh scripts alike. Wrap anything that
+# needs environment or pipelines in a small script and point SECRET_CMD at that.
 #
 # Usage:
 #   APP_SLUG=… APP_SERVICE=… ... TARGET_DIR=. ~/.claude/skills/ansible-kamal/scripts/render.sh
@@ -45,8 +50,8 @@ require DOMAIN_PROD
 require LETSENCRYPT_EMAIL
 require DEPLOY_USER
 require IMAGE_REPO
-require PASS_BACKEND
-require PASS_NAMESPACE
+require SECRET_CMD
+require SECRET_NAMESPACE
 require ENV_MODE
 require TARGET_DIR
 
@@ -63,25 +68,13 @@ case "$ENV_MODE" in
     ;;
 esac
 
-case "$PASS_BACKEND" in
-  custom)
-    PASS_STORE_DIR_DEFAULT='$(HOME)/.password-store-custom'
-    PASS_STORE_DIR_SHELL_DEFAULT="$HOME/.password-store-custom"
-    PASS_CMD_DEFAULT='env PASSWORD_STORE_DIR=$(HOME)/.password-store-custom pass'
-    ;;
-  pass)
-    PASS_STORE_DIR_DEFAULT='$(HOME)/.password-store'
-    PASS_STORE_DIR_SHELL_DEFAULT="$HOME/.password-store"
-    PASS_CMD_DEFAULT='pass'
-    ;;
-  *)
-    echo "ERROR: PASS_BACKEND must be 'custom' or 'pass'" >&2
+case "$SECRET_CMD" in
+  *'$'*)
+    echo "ERROR: SECRET_CMD must not contain '\$' - it is expanded by both make and sh." >&2
+    echo "       Wrap the lookup in a script and point SECRET_CMD at that script." >&2
     exit 2
     ;;
 esac
-
-PASS_STORE_DIR_RAW="${PASS_STORE_DIR:-$PASS_STORE_DIR_DEFAULT}"
-PASS_STORE_DIR_SHELL="${PASS_STORE_DIR_SHELL:-$PASS_STORE_DIR_SHELL_DEFAULT}"
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATES_DIR="$SKILL_DIR/templates"
@@ -133,10 +126,8 @@ substitute_vars() {
     -e "s${sep}__LETSENCRYPT_EMAIL__${sep}${LETSENCRYPT_EMAIL}${sep}g" \
     -e "s${sep}__DEPLOY_USER__${sep}${DEPLOY_USER}${sep}g" \
     -e "s${sep}__IMAGE_REPO__${sep}${IMAGE_REPO}${sep}g" \
-    -e "s${sep}__PASS_NAMESPACE__${sep}${PASS_NAMESPACE}${sep}g" \
-    -e "s${sep}__PASS_STORE_DIR_RAW__${sep}${PASS_STORE_DIR_RAW}${sep}g" \
-    -e "s${sep}__PASS_STORE_DIR_SHELL__${sep}${PASS_STORE_DIR_SHELL}${sep}g" \
-    -e "s${sep}__PASS_CMD_DEFAULT__${sep}${PASS_CMD_DEFAULT}${sep}g"
+    -e "s${sep}__SECRET_NAMESPACE__${sep}${SECRET_NAMESPACE}${sep}g" \
+    -e "s${sep}__SECRET_CMD__${sep}${SECRET_CMD}${sep}g"
 }
 
 should_skip_path() {
@@ -183,9 +174,9 @@ ansible-kamal: rendered $count_out file(s) into $TARGET_DIR_ABS
 Next steps:
   1. Review generated files (git status / git diff).
   2. cd infra/ansible && make setup && make test
-  3. Generate deploy SSH key + DB password(s); store in pass under: $PASS_NAMESPACE
+  3. Generate deploy SSH key + DB password(s); store them under: $SECRET_NAMESPACE
   4. DNS A records → $VPS_IP for: $DOMAIN_PROD${DOMAIN_STAGING:+ $DOMAIN_STAGING}
-  5. DEPLOY_SSH_KEY="\$(pass show $PASS_NAMESPACE/deploy_ssh_public_key)" make -C infra/ansible bootstrap
+  5. DEPLOY_SSH_KEY="\$($SECRET_CMD $SECRET_NAMESPACE/deploy_ssh_public_key)" make -C infra/ansible bootstrap
   6. make -C infra/ansible ansible
   7. Wire GitHub Environments + secrets per infra/kamal/README.md
   8. ENV=production make deploy$( [[ "$ENV_MODE" == "staging+production" ]] && echo "  (and ENV=staging make deploy)" )

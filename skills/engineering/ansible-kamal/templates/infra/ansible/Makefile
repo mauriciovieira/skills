@@ -1,11 +1,13 @@
-# Local Ansible + pass integration. CI uses -e placeholders.
+# Local Ansible run with secrets pulled from a secret command. CI uses -e placeholders.
 # Python tooling is isolated in $(VENV); targets refuse to run until the venv exists and contains Ansible.
 #
-# Default matches a typical zsh alias custom='PASSWORD_STORE_DIR=~/.password-store-custom pass'.
-# Make runs recipes with /bin/sh (no aliases); we invoke pass(1) with PASSWORD_STORE_DIR set.
-# Override: PASS_CMD='pass' make ansible  — or export POSTGRES_* yourself and run ansible-playbook.
+# SECRET_CMD is a command on PATH, optionally with fixed arguments, that prints the
+# secret named by its last argument to stdout. Recipes run under /bin/sh, so it must
+# be a plain command - wrap anything needing environment or pipelines in a script.
+# Override: SECRET_CMD='./bin/secret' make ansible  - or export POSTGRES_* yourself
+# and run ansible-playbook directly.
 
-PASS_CMD ?= __PASS_CMD_DEFAULT__
+SECRET_CMD ?= __SECRET_CMD__
 INVENTORY ?= inventory/production.yml
 PLAYBOOK ?= playbooks/site.yml
 VENV ?= .venv
@@ -54,8 +56,8 @@ bootstrap: check-venv
 	"$(ANSIBLE_PLAYBOOK)" -u root -i $(INVENTORY) playbooks/bootstrap.yml
 
 ansible: check-venv
-	POSTGRES___APP_SLUG_UPPER___PROD_PASSWORD="$$($(PASS_CMD) show __PASS_NAMESPACE__/postgres___APP_SLUG___prod_password)" \
+	POSTGRES___APP_SLUG_UPPER___PROD_PASSWORD="$$($(SECRET_CMD) __SECRET_NAMESPACE__/postgres___APP_SLUG___prod_password)" \
 # >>> staging-only
-	POSTGRES___APP_SLUG_UPPER___STAGING_PASSWORD="$$($(PASS_CMD) show __PASS_NAMESPACE__/postgres___APP_SLUG___staging_password)" \
+	POSTGRES___APP_SLUG_UPPER___STAGING_PASSWORD="$$($(SECRET_CMD) __SECRET_NAMESPACE__/postgres___APP_SLUG___staging_password)" \
 # <<< staging-only
 	"$(ANSIBLE_PLAYBOOK)" -u $(ANSIBLE_REMOTE_USER) -i $(INVENTORY) $(PLAYBOOK)

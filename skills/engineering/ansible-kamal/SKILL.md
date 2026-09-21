@@ -8,9 +8,9 @@ description: Use when bootstrapping a Rails project that needs Ubuntu VPS provis
 Scaffolds a full **Ansible + Kamal 2** infrastructure tree for a Rails app on a single Ubuntu VPS. Generates:
 
 - **Root `Makefile`** — `make deploy ENV=…`, `make db-restore-from-vps ENV=…`, `make build`, `make run-local`, `make mailhog`.
-- **Root `scripts/`** — `kamal-deploy-from-pass.sh`, `db-restore-from-vps.sh` (provider-agnostic — works with Hetzner, DigitalOcean, OVH, Hostinger, AWS Lightsail, etc., as long as the Ansible inventory points at the box).
+- **Root `scripts/`** - `kamal-deploy.sh`, `db-restore-from-vps.sh` (provider-agnostic - works with Hetzner, DigitalOcean, OVH, Hostinger, AWS Lightsail, etc., as long as the Ansible inventory points at the box).
 - `infra/ansible/` — playbooks (`bootstrap`, `site`, `dump_db`, `restore_db`), roles (`common`, `users`, `ssh_bootstrap`, `firewall`, `fail2ban`, `docker`, `postgresql`, `traefik`, `opt`), inventory, **`Makefile`** (`setup`, `test`, `bootstrap`, `ansible`), README.
-- `infra/kamal/README.md` — secrets / `pass` / GitHub Actions guide.
+- `infra/kamal/README.md` - secrets / secret manager / GitHub Actions guide.
 - `config/deploy.yml` (+ `config/deploy.staging.yml` if staging is enabled).
 - `.kamal/secrets`, `.kamal/secrets-common` (+ `.kamal/secrets.staging` if enabled).
 
@@ -35,8 +35,8 @@ Scaffolds a full **Ansible + Kamal 2** infrastructure tree for a Rails app on a 
 8. **Staging domain** — only if `staging+production`. Default = `staging.<production_domain>`.
 9. **Let's Encrypt email** — for kamal-proxy ACME (and Traefik if ever enabled).
 10. **Deploy user** — Linux user Ansible (`site.yml`) + Kamal SSH as. Default = `<slug>_deploy`. Must NOT be `root`.
-11. **Pass backend** — `custom` (uses a custom `PASSWORD_STORE_DIR`, e.g. `~/.password-store-custom`) or `pass` (default `~/.password-store`).
-12. **Pass namespace** — e.g. `infra/myapp`. Default = `infra/<inventory_group>`.
+11. **Secret command** - a command on PATH, optionally with fixed arguments, that prints the secret named by its last argument to stdout and nothing else. It is baked into a Makefile and into `/bin/sh` scripts, so it must contain no `$` and no shell syntax; wrap anything that needs environment or pipelines in a small script (e.g. `./bin/secret`) and name that instead.
+12. **Secret namespace** - prefix for every secret name, e.g. `infra/myapp`. Default = `infra/<inventory_group>`.
 
 ## Variable map
 
@@ -54,9 +54,8 @@ After collecting inputs, derive:
 | `__LETSENCRYPT_EMAIL__` | ACME email |
 | `__DEPLOY_USER__` | deploy linux user |
 | `__IMAGE_REPO__` | container image (no tag) |
-| `__PASS_BACKEND__` | `custom` or `pass` |
-| `__PASS_STORE_DIR__` | `$(HOME)/.password-store-custom` or empty for default |
-| `__PASS_NAMESPACE__` | e.g. `infra/myapp` |
+| `__SECRET_CMD__` | secret-printing command, e.g. `./bin/secret` |
+| `__SECRET_NAMESPACE__` | e.g. `infra/myapp` |
 | `__ENV_MODE__` | `staging+production` or `single` |
 
 ## How to scaffold
@@ -74,15 +73,14 @@ DOMAIN_STAGING=staging.example.com \
 LETSENCRYPT_EMAIL=admin@example.com \
 DEPLOY_USER=myapp_deploy \
 IMAGE_REPO=myorg/my-app \
-PASS_BACKEND=custom \
-PASS_STORE_DIR='$(HOME)/.password-store-custom' \
-PASS_NAMESPACE=infra/myapp \
+SECRET_CMD=./bin/secret \
+SECRET_NAMESPACE=infra/myapp \
 ENV_MODE=staging+production \
 TARGET_DIR=. \
 ~/.claude/skills/ansible-kamal/scripts/render.sh
 ```
 
-For `ENV_MODE=single` leave `DOMAIN_STAGING` empty (or unset). `PASS_STORE_DIR` may be empty when `PASS_BACKEND=pass`.
+For `ENV_MODE=single` leave `DOMAIN_STAGING` empty (or unset). `SECRET_CMD` is rejected if it contains `$`, because make and `/bin/sh` would expand it differently.
 
 The script:
 
@@ -97,12 +95,12 @@ The script:
 Tell the user, in order:
 
 1. `cd infra/ansible && make setup && make test` — bootstraps venv + galaxy collections + lints.
-2. Generate deploy SSH key pair, `pass insert -m __PASS_NAMESPACE__/deploy_ssh_{private,public}_key`.
-3. Generate DB passwords: `openssl rand -base64 32`, store at `__PASS_NAMESPACE__/postgres___APP_SLUG___prod_password` (and `_staging_` if applicable).
+2. Generate deploy SSH key pair, store both halves as `__SECRET_NAMESPACE__/deploy_ssh_{private,public}_key`.
+3. Generate DB passwords: `openssl rand -base64 32`, store at `__SECRET_NAMESPACE__/postgres___APP_SLUG___prod_password` (and `_staging_` if applicable).
 4. DNS `A` records: `__DOMAIN_PROD__` (+ `__DOMAIN_STAGING__`) → `__VPS_IP__`.
 5. Open the VPS provider's firewall (or `ufw`): allow 22/80/443 from anywhere (or your IP for 22).
-6. Run `DEPLOY_SSH_KEY="$(pass show __PASS_NAMESPACE__/deploy_ssh_public_key)" make bootstrap` (root reachable).
-7. Run `make ansible` (loads PG passwords from pass and provisions `site.yml` as `__DEPLOY_USER__`).
+6. Run `DEPLOY_SSH_KEY="$(./bin/secret __SECRET_NAMESPACE__/deploy_ssh_public_key)" make bootstrap` (root reachable).
+7. Run `make ansible` (loads the PG passwords through `SECRET_CMD` and provisions `site.yml` as `__DEPLOY_USER__`).
 8. Wire GitHub Environments + secrets per `infra/kamal/README.md`.
 9. `bundle exec kamal setup` (production) and `bundle exec kamal setup -d staging` (if staging).
 
@@ -119,7 +117,7 @@ Tell the user, in order:
 
 ```
 Makefile                          # root: deploy, db-restore-from-vps, build, run-local, mailhog
-scripts/kamal-deploy-from-pass.sh
+scripts/kamal-deploy.sh
 scripts/db-restore-from-vps.sh
 infra/README.md
 infra/ansible/ansible.cfg
@@ -156,4 +154,4 @@ config/deploy.staging.yml         # only if ENV_MODE=staging+production
 | Used `__APP_SLUG__` with hyphens | Slug must be snake_case; service name is the kebab-case form. Postgres identifiers reject hyphens. |
 | `single` mode but staging files present | Set `ENV_MODE=single`, leave `DOMAIN_STAGING` empty, re-render. |
 | Deploy user = `root` | Disallowed; `users` role creates it as a non-sudo account with restricted sudoers. Pick `<slug>_deploy`. |
-| Pass paths don't match Makefile | `__PASS_NAMESPACE__` flows into Makefile `make ansible` target. Match what's in `pass`. |
+| Secret names don't match Makefile | `__SECRET_NAMESPACE__` flows into the `make ansible` target. Match what your secret manager actually holds. |

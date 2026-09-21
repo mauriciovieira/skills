@@ -59,8 +59,8 @@ letsencrypt_staging: false
 traefik_enabled: false
 
 # PostgreSQL - app databases (never commit real values)
-# Local: `make ansible` loads these via custom (see Makefile).
-# Pass paths: __PASS_NAMESPACE__/postgres___APP_SLUG___{prod,staging}_password
+# Local: `make ansible` loads these through SECRET_CMD (see Makefile).
+# Secret names: __SECRET_NAMESPACE__/postgres___APP_SLUG___{prod,staging}_password
 postgres___APP_SLUG___prod_password: "{{ lookup('env', 'POSTGRES___APP_SLUG_UPPER___PROD_PASSWORD') | default('', true) }}"
 # >>> staging-only
 postgres___APP_SLUG___staging_password: "{{ lookup('env', 'POSTGRES___APP_SLUG_UPPER___STAGING_PASSWORD') | default('', true) }}"
