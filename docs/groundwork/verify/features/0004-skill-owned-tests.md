@@ -8,10 +8,6 @@ Two skills ship an executable test. `grilling/test/run.sh` is a three-line wrapp
 `test_grill_stop.py`, 34 assertions over synthetic transcripts covering the Stop hook the
 skill ships in `grilling/hooks/`.
 
-Nothing ran them. Not CI, not the review workflow, not a pre-commit hook. A test passed or
-failed only when someone remembered to type `bash test/run.sh` - which, on the change that
-prompted this whole asset, nobody did until after the pull request was open.
-
 `review-with-jev/test/run.sh` is 60 assertions over `evidence-guard.sh`, the deterministic path
 filter that decides what leaves the machine for a third-party API, plus drift checks asserting
 that `SKILL.md` still names the guard, the env var and its policy version.
