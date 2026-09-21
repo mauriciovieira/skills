@@ -68,22 +68,32 @@ esac
 
 # SECRET_CMD must resolve identically from every directory it is invoked from.
 # The generated scripts cd to the project root; `make -C infra/ansible ansible`
-# runs with its own directory as cwd. A relative path therefore means two
-# different files. A leading ~ is worse: /bin/sh expands it in a make recipe but
-# leaves it literal after parameter expansion inside the scripts. And `$` is
-# expanded by make and by sh differently. So: PATH command or absolute path.
+# runs with its own directory as cwd. So: PATH command or absolute path.
+#
+# `$` and `~` are rejected anywhere in the string, arguments included, because a
+# make recipe hands the value to /bin/sh, which expands both, while inside the
+# generated scripts the value arrives through parameter expansion, after which
+# neither is expanded. Same string, two meanings.
 case "$SECRET_CMD" in
   *'$'*)
     echo "ERROR: SECRET_CMD must not contain '\$' - make and sh expand it differently." >&2
     echo "       Wrap the lookup in a script and name that script instead." >&2
     exit 2
     ;;
-  '~'*)
-    echo "ERROR: SECRET_CMD must not start with '~' - a make recipe expands it," >&2
+  *'~'*)
+    echo "ERROR: SECRET_CMD must not contain '~' - a make recipe expands it," >&2
     echo "       the generated scripts do not. Use an absolute path." >&2
     exit 2
     ;;
-  ./*|../*)
+esac
+
+# The path rules apply to the command word only: a fixed argument may well
+# contain a slash. Any command word containing a slash is resolved against the
+# current directory and never searched for on PATH, so unless it is absolute it
+# names two different files from the two call sites.
+case "${SECRET_CMD%% *}" in
+  /*) ;;
+  */*)
     echo "ERROR: SECRET_CMD must not be a relative path - it is invoked from the" >&2
     echo "       project root and from infra/ansible, which are different directories." >&2
     echo "       Put the command on PATH, or give an absolute path." >&2

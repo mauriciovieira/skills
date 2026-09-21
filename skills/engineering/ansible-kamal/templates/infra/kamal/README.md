@@ -43,6 +43,11 @@ your-secret-manager read "$1"
 Put it somewhere on `PATH` and make it executable, then render with
 `SECRET_CMD=secret`.
 
+`SECRET_CMD` may carry fixed arguments before the secret name, so it is split on
+whitespace. A command whose own path contains a space therefore cannot work; its
+arguments are free to contain anything but `$` and `~`, which make and `/bin/sh`
+would expand while the generated scripts would not.
+
 ## Secret names
 
 Namespace: `__SECRET_NAMESPACE__`.

@@ -110,17 +110,30 @@ reject() {
     check $? "SECRET_CMD '$1' is rejected with exit 2"
 }
 
+accept() {
+    d="$TMP/accept"
+    rm -rf "$d"
+    mkdir -p "$d"
+    render "$d" single "$1"
+    check $? "SECRET_CMD '$1' is accepted"
+}
+
 reject 'env D=$(HOME)/x mytool'
 reject '~/bin/secret'
+reject 'mytool --store ~/vault'
 reject './bin/secret'
 reject '../bin/secret'
+# A relative path with no leading dot is the same bug wearing a different hat:
+# any command word containing a slash resolves against cwd, never PATH.
+reject 'bin/secret'
+reject 'tools/get-secret --json'
 
-# ...and a legitimate one is still accepted, so the guard is not simply refusing
-# everything.
-d="$TMP/accept"
-mkdir -p "$d"
-render "$d" single /usr/local/bin/secret
-check $? "an absolute SECRET_CMD is accepted"
+# The guard must not simply refuse everything. A bare PATH command, an absolute
+# path, and a fixed argument that happens to contain a slash are all legitimate:
+# the path rules apply to the command word, not to its arguments.
+accept secret
+accept /usr/local/bin/secret
+accept 'secret --store infra/prod'
 
 total=$((pass + fail))
 if [ "$fail" = 0 ]; then

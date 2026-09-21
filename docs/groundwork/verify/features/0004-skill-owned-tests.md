@@ -21,12 +21,13 @@ open. The suite also asks the prefixed-and-suffixed question of every credential
 than of one, after a rule tested only at its literal spelling shipped as an exact match while
 95 assertions stayed green.
 
-`ansible-kamal/test/render.sh` is 28 assertions over the renderer, which writes a deploy tree
+`ansible-kamal/test/render.sh` is 33 assertions over the renderer, which writes a deploy tree
 into somebody else's project. It renders into a temp directory in both `ENV_MODE`s and asserts
 that no placeholder and no secret-manager-specific string leaks into the output, that the
-generated scripts parse, that `make` expands the recipes to the real command, and that every
-`SECRET_CMD` form the contract forbids is refused at render time - a relative path, a leading
-`~`, a `$` - while an absolute one is still accepted.
+generated scripts parse, and that `make` expands the recipes to the real command. Then it works
+both sides of the `SECRET_CMD` guard: every forbidden form refused - `$`, `~`, and a relative
+path whether or not it leads with a dot - and every legitimate one accepted, including a fixed
+argument that contains a slash, since the path rules apply to the command word alone.
 
 `control` runs any `*.sh` under a `test` path inside the skill's directory, so a further skill
 that grows a test is picked up with no change here - which is what happened with `grilling`,
@@ -47,7 +48,7 @@ review workflow reviews the diff; it does not run anything.
 ```
 
 Observable outcome: `own-tests ok  run.sh: 147/147 OK`, `own-tests ok  run.sh: 34/34 OK`, and
-`own-tests ok  render.sh: 28/28 OK`. Skills with no test read `skip  none`, which is a fact,
+`own-tests ok  render.sh: 33/33 OK`. Skills with no test read `skip  none`, which is a fact,
 not a pass.
 
 ## Known failure modes
@@ -56,7 +57,9 @@ Proven to fail: dropping the `(?<![A-Za-z_])` lookbehind from the hook's Bash wr
 fails assertion 24 of `grilling/test/run.sh`, and dropping its cross-session branch fails
 assertion 29. Also proven: removing the `set -f` line from
 `ansible-kamal/templates/scripts/kamal-deploy.sh` fails `render.sh` twice, once per
-`ENV_MODE`, with `both generated scripts disable globbing`.
+`ENV_MODE`, with `both generated scripts disable globbing`. And narrowing that skill's
+relative-path guard back to `./*|../*` fails the two assertions covering a relative path
+with no leading dot, which is how that gap was found in the first place.
 
 `review-with-jev` was mutation-checked one hole at a time, because reverting several together
 hides a useless assertion behind a working one. Turning off `shopt -s nocasematch` fails 11,
