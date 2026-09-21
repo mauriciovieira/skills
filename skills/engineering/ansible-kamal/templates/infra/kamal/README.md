@@ -26,14 +26,22 @@ Nothing here assumes a particular manager. `make deploy`, `make db-restore-from-
 and `make -C infra/ansible ansible` all read secrets by calling `$(SECRET_CMD)` with
 one secret name as its last argument and reading the value from stdout. Point
 `SECRET_CMD` at whatever you already use, wrapping it in a script if the lookup
-needs more than a plain command:
+needs more than a plain command.
+
+That wrapper must be on your `PATH` or named by an absolute path, never a
+relative one: the two scripts run from the project root while `make -C
+infra/ansible ansible` runs from `infra/ansible`, so `./bin/secret` would mean
+two different files. `render.sh` rejects a relative path for that reason.
 
 ```sh
-# bin/secret - called as: bin/secret __SECRET_NAMESPACE__/rails_master_key_production
 #!/usr/bin/env bash
+# secret - called as: secret __SECRET_NAMESPACE__/rails_master_key_production
 set -euo pipefail
 your-secret-manager read "$1"
 ```
+
+Put it somewhere on `PATH` and make it executable, then render with
+`SECRET_CMD=secret`.
 
 ## Secret names
 

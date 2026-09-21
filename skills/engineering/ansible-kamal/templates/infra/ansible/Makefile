@@ -1,11 +1,15 @@
 # Local Ansible run with secrets pulled from a secret command. CI uses -e placeholders.
 # Python tooling is isolated in $(VENV); targets refuse to run until the venv exists and contains Ansible.
 #
-# SECRET_CMD is a command on PATH, optionally with fixed arguments, that prints the
-# secret named by its last argument to stdout. Recipes run under /bin/sh, so it must
-# be a plain command - wrap anything needing environment or pipelines in a script.
-# Override: SECRET_CMD='./bin/secret' make ansible  - or export POSTGRES_* yourself
-# and run ansible-playbook directly.
+# SECRET_CMD is a command on PATH, or an absolute path, optionally with fixed
+# arguments, that prints the secret named by its last argument to stdout. This
+# recipe runs with infra/ansible as its working directory while the project's
+# other consumers run from the project root, so a relative path would resolve to
+# two different files; render.sh rejects one. Recipes run under /bin/sh, so it
+# must be a plain command - wrap anything needing environment or pipelines in a
+# script on PATH.
+# Override: SECRET_CMD=secret make ansible  - or export POSTGRES_* yourself and
+# run ansible-playbook directly.
 
 SECRET_CMD ?= __SECRET_CMD__
 INVENTORY ?= inventory/production.yml

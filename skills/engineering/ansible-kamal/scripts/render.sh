@@ -13,7 +13,7 @@
 #   LETSENCRYPT_EMAIL e.g. admin@example.com
 #   DEPLOY_USER       e.g. myapp_deploy
 #   IMAGE_REPO        e.g. myorg/myapp
-#   SECRET_CMD        command that prints a secret to stdout, e.g. './bin/secret'
+#   SECRET_CMD        command that prints a secret to stdout, e.g. 'secret'
 #   SECRET_NAMESPACE  prefix for every secret name, e.g. infra/myapp
 #   ENV_MODE          staging+production|single
 #   TARGET_DIR        path to project root
@@ -22,11 +22,9 @@
 #   DOMAIN_STAGING    required if ENV_MODE=staging+production; ignored otherwise
 #   FORCE             1 to overwrite existing infra/ansible
 #
-# SECRET_CMD contract: a command on PATH, optionally with fixed arguments, that
-# prints the secret named by its LAST argument to stdout and nothing else. It is
-# invoked as `$SECRET_CMD <namespace>/<name>`. No shell syntax, no $ expansion -
-# it is baked into a Makefile and into /bin/sh scripts alike. Wrap anything that
-# needs environment or pipelines in a small script and point SECRET_CMD at that.
+# SECRET_CMD is split on whitespace to separate the command from its fixed
+# arguments, so a command path containing a space cannot work. The guard below
+# states the rest of the contract and enforces it.
 #
 # Usage:
 #   APP_SLUG=… APP_SERVICE=… ... TARGET_DIR=. ~/.claude/skills/ansible-kamal/scripts/render.sh
@@ -68,10 +66,27 @@ case "$ENV_MODE" in
     ;;
 esac
 
+# SECRET_CMD must resolve identically from every directory it is invoked from.
+# The generated scripts cd to the project root; `make -C infra/ansible ansible`
+# runs with its own directory as cwd. A relative path therefore means two
+# different files. A leading ~ is worse: /bin/sh expands it in a make recipe but
+# leaves it literal after parameter expansion inside the scripts. And `$` is
+# expanded by make and by sh differently. So: PATH command or absolute path.
 case "$SECRET_CMD" in
   *'$'*)
-    echo "ERROR: SECRET_CMD must not contain '\$' - it is expanded by both make and sh." >&2
-    echo "       Wrap the lookup in a script and point SECRET_CMD at that script." >&2
+    echo "ERROR: SECRET_CMD must not contain '\$' - make and sh expand it differently." >&2
+    echo "       Wrap the lookup in a script and name that script instead." >&2
+    exit 2
+    ;;
+  '~'*)
+    echo "ERROR: SECRET_CMD must not start with '~' - a make recipe expands it," >&2
+    echo "       the generated scripts do not. Use an absolute path." >&2
+    exit 2
+    ;;
+  ./*|../*)
+    echo "ERROR: SECRET_CMD must not be a relative path - it is invoked from the" >&2
+    echo "       project root and from infra/ansible, which are different directories." >&2
+    echo "       Put the command on PATH, or give an absolute path." >&2
     exit 2
     ;;
 esac

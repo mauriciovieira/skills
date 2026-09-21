@@ -3,6 +3,9 @@
 # Provider-agnostic: works against any Ubuntu VPS provisioned by infra/ansible
 # (Hostinger, Hetzner, DigitalOcean, OVH, AWS Lightsail, …) — just point inventory at the host.
 set -euo pipefail
+# secret() expands $SECRET_CMD unquoted to allow fixed arguments; unquoted
+# expansion also globs, so disable pathname expansion. Nothing here needs it.
+set -f
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
