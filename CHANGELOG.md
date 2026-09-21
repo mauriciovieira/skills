@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.14] - 2026-09-21
+
+### Changed
+
+- remove the babysit-with-claude-review skill ([#24](https://github.com/mauriciovieira/skills/pull/24))
+- drop an anecdote attached to the wrong test ([#24](https://github.com/mauriciovieira/skills/pull/24))
+
 ## [0.2.13] - 2026-09-20
 
 ### Added
