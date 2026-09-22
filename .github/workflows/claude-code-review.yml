@@ -3,21 +3,9 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,24 +14,80 @@ jobs:
       id-token: write
 
     steps:
+      # fetch-depth: 0, not 1. Triage diffs base...HEAD, and with a shallow
+      # clone the base branch is not a local ref - every run would fail to read
+      # the diff and escalate, which is safe but makes the cheap pass useless.
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
+      # Tracks main, deliberately unpinned. Pinning was for third-party code
+      # from an author nobody here knows; this fork is ours, and a pin would
+      # mean every improvement to the review server needed a template bump and
+      # a sweep across every repo before it took effect.
+      #
+      # Safe to track a moving ref because the failure is benign: if a bad push
+      # breaks the server, jev-triage cannot reach a judgement and escalates,
+      # so the repo falls back to Claude reviewing everything - the behaviour
+      # from before the cascade, not a repo with no review. The blast radius is
+      # bounded the same way as before, because what the server receives has
+      # already been through evidence-guard.sh, which lives here and is pinned
+      # by being vendored.
+      #
+      # To freeze one repo on a known-good commit, replace `main` with a SHA in
+      # that repo's own workflow; the drift guard will then report it.
+      - name: Checkout the Jev review server
+        uses: actions/checkout@v4
+        with:
+          repository: mauriciovieira/jev-review
+          ref: main
+          path: .jev-server
+
+      # System 1: cheap, bounded, runs always. It decides one thing - whether
+      # the expensive reviewer is worth waking - and never blocks a merge.
+      - name: Jev triage
+        id: triage
+        env:
+          JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
+          JEV_SERVER: ${{ github.workspace }}/.jev-server/dist/server.js
+          JEV_GUARD: ${{ github.workspace }}/.github/jev/evidence-guard.sh
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # A pull_request event checks out the MERGE REF, so these scripts are
+          # the PR's own copies. Without this a PR could rewrite its own
+          # verdict - print a declined marker, set escalate=false, and the
+          # expensive reviewer is skipped by its own if: - while the daily
+          # sweep counts the forged marker as a pass. The same edit is also
+          # arbitrary code in a step whose environment holds JEV_API_KEY.
+          # claude-code-action self-protects this way too, but its check covers
+          # the workflow file only and nothing was watching .github/jev/.
+          if ! git diff --quiet "origin/$BASE_REF" HEAD -- .github/jev/; then
+            echo "jev-triage: escalated (this PR modifies the triage scripts)"
+            echo "escalate=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # BASE_REF arrives through the environment above and is never
+          # interpolated into this script. A GitHub expression is substituted
+          # textually before the shell ever parses the line, and command
+          # substitution, backticks and semicolons are all valid inside a git
+          # ref name - so interpolating one here would be a shell injection.
+          # (Writing that expression syntax literally in this comment is itself
+          # a syntax error: GitHub expands it inside run blocks, comments too.)
+          python3 .github/jev/jev-triage --base "origin/$BASE_REF" --head HEAD
+
+      # System 2: slow, expensive, and the only one of the two that finds a
+      # mechanism and writes a fix. Woken only when System 1 saw something, or
+      # could not tell.
       - name: Run Claude Code Review
         id: claude-review
+        if: steps.triage.outputs.escalate == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # Read-only exploration tools alongside the comment tool. Without
-          # them every Read/Grep/Glob the reviewer attempts is refused by the
-          # permission layer, which both shows up as permission_denials_count
-          # and leaves the review working from the diff alone.
-          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment,Read,Grep,Glob"'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
