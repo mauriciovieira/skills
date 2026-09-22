@@ -80,6 +80,77 @@ done
 bash "$GUARD" src/main.ts .env >/dev/null 2>&1
 check "secret sets exit 2" "2" "$?"
 
+# --- every rule is a SHAPE, not a spelling ----------------------------------
+# `case` is case-sensitive and nocasematch is off by default, so each rule used
+# to fire only on the exact lowercase form. Credentials.json and Secrets.json
+# are ordinary .NET names; .ENV is what some Windows editors write.
+for p in \
+  .ENV \
+  prod.Env \
+  config/.Env.production \
+  Credentials.json \
+  Secrets.yaml \
+  SECRETS/db.txt \
+  ID_RSA \
+  app.PEM \
+  Store/Vault.KDBX \
+  .NPMRC
+do
+  check "uppercase: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
+# The carve-out has to be case-insensitive too, or it stops working the moment
+# the rules above start ignoring case.
+for p in .ENV.EXAMPLE Config.Env.Sample .Env.Template
+do
+  check "uppercase sample: $p" "include $p" "$(verdict "$p")"
+done
+
+# Capitals must not make ordinary source look credential-shaped either.
+for p in KEYBOARD.md src/MonkeyPatch.ts docs/Credentials-Guide.md src/Keys.rs
+do
+  check "uppercase ok: $p" "include $p" "$(verdict "$p")"
+done
+
+# --- families that had no rule at all ---------------------------------------
+for p in .envrc .pgpass .htpasswd terraform.tfstate infra.tfstate.backup \
+         AuthKey_ABC123.p8 deploy.ppk
+do
+  check "family: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
+# --- a leading dash is a filename, not decoration ---------------------------
+# Matching `-*` as decoration meant these printed "not a path" and left
+# found_secret at 0, so the whole list exited clean. That is worse than leaking
+# one file: it disarms the gate, and a caller reading only the exit code cannot
+# tell "nothing suspicious" from "there was a secret and I skipped it".
+for p in -prod.env -id_rsa ---prod.env
+do
+  check "dash: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+check "dash, ordinary file" "include -normal.py" "$(verdict "-normal.py")"
+
+# A key is the same key whatever sits in front of its name.
+for p in backup-id_rsa my.id_ed25519.bak
+do
+  check "unanchored key: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
+# --- the EXIT CODE, not just the printed lines ------------------------------
+# Both holes showed up here first. A test comparing only stdout passes with the
+# gate wide open, because the lines can be right while the code says clean.
+bash "$GUARD" src/main.ts .ENV >/dev/null 2>&1
+check "uppercase secret exits 2" "2" "$?"
+bash "$GUARD" src/main.ts -prod.env >/dev/null 2>&1
+check "dash secret exits 2" "2" "$?"
+bash "$GUARD" src/main.ts .envrc >/dev/null 2>&1
+check "envrc exits 2" "2" "$?"
+bash "$GUARD" src/main.ts README.md >/dev/null 2>&1
+check "clean list exits 0" "0" "$?"
+# Decoration alone must not be mistaken for a finding.
+printf -- '--- Changes ---\nsrc/a.ts\n' | bash "$GUARD" >/dev/null 2>&1
+check "decoration exits 0" "0" "$?"
+
 # --- sample env files are readable, not secret ------------------------------
 for p in .env.example .env.sample .env.template
 do
