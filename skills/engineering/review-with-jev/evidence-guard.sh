@@ -35,8 +35,12 @@ set -u
 # Credentials.json and Secrets.json are ordinary .NET names and .ENV is what
 # some Windows editors write - this was not an exotic case.
 #
-# This affects `case` only. The string tests in handle() use [ ], which is
-# unaffected, so the include/exclude decision keeps its exact matching.
+# Scope, stated honestly: this is global to the script, so it also widens the
+# vendored, generated, lockfile and binary blocks below - `Build/`, `Vendor/`
+# and `*.PNG` now match too. That is over-exclusion, which this file already
+# accepts as the cheap side of the trade, and every exclusion prints its
+# reason. The string tests in handle() use [ ], which is unaffected, so the
+# include/exclude decision itself keeps its exact matching.
 shopt -s nocasematch
 
 SECRET_REASON="credential-shaped path"
@@ -76,7 +80,12 @@ classify() {
     *id_rsa*|*id_dsa*|*id_ecdsa*|*id_ed25519*) echo "$SECRET_REASON"; return ;;
     *.pem*|*.p12*|*.pfx*|*.key*|*.jks*) echo "$SECRET_REASON"; return ;;
     *.keystore*|*.kdbx*|*.p8*|*.ppk*) echo "$SECRET_REASON"; return ;;
-    .pgpass|.htpasswd|*.tfstate*) echo "$SECRET_REASON"; return ;;
+    # Unanchored for the same reason as the keys above, and written out
+    # because the first version of this line was not: `.pgpass` and
+    # `.htpasswd` were exact matches, so backup.pgpass, db.pgpass.bak and
+    # site.htpasswd.old all read as ordinary files. No dot either - Windows
+    # spells it pgpass.conf, which even `*.pgpass*` would miss.
+    *pgpass*|*htpasswd*|*.tfstate*) echo "$SECRET_REASON"; return ;;
     *npmrc*|*pypirc*|*netrc*) echo "$SECRET_REASON"; return ;;
     *credentials|*credentials.*) echo "$SECRET_REASON"; return ;;
     secrets|secrets.*|*.secrets|*.secrets.*) echo "$SECRET_REASON"; return ;;

@@ -136,6 +136,20 @@ do
   check "unanchored key: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
 done
 
+# The same question, asked of every other family. The block above caught the
+# anchoring bug for id_rsa and nothing asked it of pgpass or htpasswd, so a
+# first version of this commit shipped them as exact matches: backup.pgpass,
+# db.pgpass.bak and site.htpasswd.old all read as ordinary files while 95/95
+# passed. A rule tested only at its literal spelling is a rule tested nowhere.
+for p in \
+  backup.pgpass db.pgpass.bak pgpass.conf \
+  site.htpasswd.old team.htpasswd.bak \
+  prod.tfstate.backup old.p8.bak deploy.ppk.old \
+  vault.kdbx.bak app.keystore.old
+do
+  check "unanchored family: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
 # --- the EXIT CODE, not just the printed lines ------------------------------
 # Both holes showed up here first. A test comparing only stdout passes with the
 # gate wide open, because the lines can be right while the code says clean.
