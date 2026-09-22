@@ -3,19 +3,18 @@
 # Provider-agnostic: works against any Ubuntu VPS provisioned by infra/ansible
 # (Hostinger, Hetzner, DigitalOcean, OVH, AWS Lightsail, …) — just point inventory at the host.
 set -euo pipefail
-# secret() expands $SECRET_CMD unquoted to allow fixed arguments; unquoted
-# expansion also globs, so disable pathname expansion. Nothing here needs it.
-set -f
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Command that prints the secret named by its last argument to stdout.
+# Absolute path to a command that prints the secret named by its argument to
+# stdout, with no arguments of its own.
 SECRET_CMD="${SECRET_CMD:-__SECRET_CMD__}"
 
-# Unquoted on purpose: SECRET_CMD may carry fixed arguments ahead of the name.
+# SECRET_CMD is an absolute path with no arguments, so the expansion is quoted:
+# no word splitting, no globbing, nothing to disable.
 secret() {
-  $SECRET_CMD "$1"
+  "$SECRET_CMD" "$1"
 }
 
 require_cmd() {
@@ -25,7 +24,7 @@ require_cmd() {
   }
 }
 
-require_cmd "${SECRET_CMD%% *}"
+require_cmd "$SECRET_CMD"
 require_cmd mktemp
 require_cmd pg_restore
 require_cmd psql

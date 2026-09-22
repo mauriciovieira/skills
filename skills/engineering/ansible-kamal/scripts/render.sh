@@ -13,7 +13,8 @@
 #   LETSENCRYPT_EMAIL e.g. admin@example.com
 #   DEPLOY_USER       e.g. myapp_deploy
 #   IMAGE_REPO        e.g. myorg/myapp
-#   SECRET_CMD        command that prints a secret to stdout, e.g. 'secret'
+#   SECRET_CMD        absolute path to a command that prints a secret to stdout,
+#                     with no arguments, e.g. '/usr/local/bin/secret'
 #   SECRET_NAMESPACE  prefix for every secret name, e.g. infra/myapp
 #   ENV_MODE          staging+production|single
 #   TARGET_DIR        path to project root
@@ -22,10 +23,6 @@
 #   DOMAIN_STAGING    required if ENV_MODE=staging+production; ignored otherwise
 #   FORCE             1 to overwrite existing infra/ansible
 #
-# SECRET_CMD is split on whitespace to separate the command from its fixed
-# arguments, so a command path containing a space cannot work. The guard below
-# states the rest of the contract and enforces it.
-#
 # Usage:
 #   APP_SLUG=… APP_SERVICE=… ... TARGET_DIR=. ~/.claude/skills/ansible-kamal/scripts/render.sh
 
@@ -33,8 +30,8 @@ set -euo pipefail
 
 require() {
   local var="$1"
-  if [[ -z "${!var:-}" ]]; then
-    echo "ERROR: required env var $var is empty" >&2
+  if [[ -z "${!var:-}" || -z "${!var// /}" ]]; then
+    echo "ERROR: required env var $var is empty or only whitespace" >&2
     exit 2
   fi
 }
@@ -66,37 +63,35 @@ case "$ENV_MODE" in
     ;;
 esac
 
-# SECRET_CMD must resolve identically from every directory it is invoked from.
-# The generated scripts cd to the project root; `make -C infra/ansible ansible`
-# runs with its own directory as cwd. So: PATH command or absolute path.
-#
-# `$` and `~` are rejected anywhere in the string, arguments included, because a
-# make recipe hands the value to /bin/sh, which expands both, while inside the
-# generated scripts the value arrives through parameter expansion, after which
-# neither is expanded. Same string, two meanings.
+# SECRET_CMD is an absolute path to an executable, with no arguments. That is a
+# narrow contract on purpose. The value is baked into a Makefile and into two
+# /bin/sh scripts that run from different working directories, and five earlier
+# attempts to allow anything looser each admitted a value that resolved to one
+# file from the project root and another from infra/ansible - a relative path
+# with or without a leading dot, a leading ~, a leading space, and a wrapper
+# like `env FOO=bar bin/secret` that hides the real executable behind its own
+# first word. An absolute path with no arguments cannot do that, and it lets the
+# generated scripts quote the expansion, which removes word splitting and
+# globbing too. Anything more elaborate goes in a wrapper script, which the
+# generated infra/kamal/README.md shows how to write.
 case "$SECRET_CMD" in
-  *'$'*)
-    echo "ERROR: SECRET_CMD must not contain '\$' - make and sh expand it differently." >&2
-    echo "       Wrap the lookup in a script and name that script instead." >&2
+  *[[:space:]]*)
+    echo "ERROR: SECRET_CMD must not contain whitespace - no arguments, and no" >&2
+    echo "       leading or trailing space. Put arguments inside a wrapper script" >&2
+    echo "       and name the wrapper." >&2
     exit 2
     ;;
-  *'~'*)
-    echo "ERROR: SECRET_CMD must not contain '~' - a make recipe expands it," >&2
-    echo "       the generated scripts do not. Use an absolute path." >&2
+  *'$'*|*'`'*)
+    echo "ERROR: SECRET_CMD must not contain '\$' or a backtick - a make recipe" >&2
+    echo "       hands the value to /bin/sh, which expands both, while the" >&2
+    echo "       generated scripts do not." >&2
     exit 2
     ;;
-esac
-
-# The path rules apply to the command word only: a fixed argument may well
-# contain a slash. Any command word containing a slash is resolved against the
-# current directory and never searched for on PATH, so unless it is absolute it
-# names two different files from the two call sites.
-case "${SECRET_CMD%% *}" in
   /*) ;;
-  */*)
-    echo "ERROR: SECRET_CMD must not be a relative path - it is invoked from the" >&2
-    echo "       project root and from infra/ansible, which are different directories." >&2
-    echo "       Put the command on PATH, or give an absolute path." >&2
+  *)
+    echo "ERROR: SECRET_CMD must be an absolute path - it is invoked from the" >&2
+    echo "       project root and from infra/ansible, which are different" >&2
+    echo "       directories, so anything relative names two different files." >&2
     exit 2
     ;;
 esac

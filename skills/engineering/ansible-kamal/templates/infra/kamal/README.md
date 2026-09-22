@@ -24,29 +24,30 @@ DB connectivity is to **PostgreSQL on the host**. Kamal sets `DATABASE_HOST=host
 
 Nothing here assumes a particular manager. `make deploy`, `make db-restore-from-vps`
 and `make -C infra/ansible ansible` all read secrets by calling `$(SECRET_CMD)` with
-one secret name as its last argument and reading the value from stdout. Point
-`SECRET_CMD` at whatever you already use, wrapping it in a script if the lookup
-needs more than a plain command.
+one secret name as its only argument and reading the value from stdout. Point
+`SECRET_CMD` at a script that does that for whatever you already use.
 
-That wrapper must be on your `PATH` or named by an absolute path, never a
-relative one: the two scripts run from the project root while `make -C
-infra/ansible ansible` runs from `infra/ansible`, so `./bin/secret` would mean
-two different files. `render.sh` rejects a relative path for that reason.
+`SECRET_CMD` must be an **absolute path** with **no arguments of its own**. That
+is stricter than it looks necessary, and deliberately so: the two scripts run
+from the project root while `make -C infra/ansible ansible` runs from
+`infra/ansible`, so anything relative names two different files - and so does a
+wrapper like `env FOO=bar bin/secret`, whose own first word hides the relative
+path. Because the value is a single word, the generated scripts quote it, which
+also removes word splitting and globbing. `render.sh` refuses whitespace, `$`, a
+backtick, and anything not beginning with `/`.
+
+Everything else - environment, flags, pipelines - goes inside the script:
 
 ```sh
 #!/usr/bin/env bash
-# secret - called as: secret __SECRET_NAMESPACE__/rails_master_key_production
+# /usr/local/bin/secret - called as:
+#   secret __SECRET_NAMESPACE__/rails_master_key_production
 set -euo pipefail
-your-secret-manager read "$1"
+export YOUR_MANAGER_STORE=/wherever
+your-secret-manager read --store "$YOUR_MANAGER_STORE" "$1"
 ```
 
-Put it somewhere on `PATH` and make it executable, then render with
-`SECRET_CMD=secret`.
-
-`SECRET_CMD` may carry fixed arguments before the secret name, so it is split on
-whitespace. A command whose own path contains a space therefore cannot work; its
-arguments are free to contain anything but `$` and `~`, which make and `/bin/sh`
-would expand while the generated scripts would not.
+Make it executable and render with `SECRET_CMD=/usr/local/bin/secret`.
 
 ## Secret names
 

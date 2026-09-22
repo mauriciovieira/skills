@@ -42,7 +42,7 @@ for mode in staging+production single; do
     d="$TMP/${mode//+/-}"
     mkdir -p "$d"
 
-    render "$d" "$mode" secret
+    render "$d" "$mode" /usr/local/bin/secret
     check $? "$mode: render.sh exits 0"
 
     grep -rlE '__[A-Z][A-Z0-9_]*__' "$d" >/dev/null 2>&1
@@ -59,26 +59,27 @@ for mode in staging+production single; do
     { [ -x "$d/scripts/kamal-deploy.sh" ] && [ ! -e "$d/scripts/kamal-deploy-from-pass.sh" ]; }
     check $? "$mode: kamal-deploy.sh is executable and the old name is gone"
 
-    # Unquoted $SECRET_CMD globs as well as word-splits, so the scripts disable
-    # pathname expansion. Losing this is a silent wrong-file read.
-    grep -q '^set -f$' "$d/scripts/kamal-deploy.sh" &&
-        grep -q '^set -f$' "$d/scripts/db-restore-from-vps.sh"
-    check $? "$mode: both generated scripts disable globbing"
+    # An absolute path with no arguments can be quoted, which is what removes
+    # word splitting and globbing. An unquoted $SECRET_CMD here would be a
+    # silent wrong-file read.
+    grep -q '"\$SECRET_CMD" "\$1"' "$d/scripts/kamal-deploy.sh" &&
+        grep -q '"\$SECRET_CMD" "\$1"' "$d/scripts/db-restore-from-vps.sh"
+    check $? "$mode: both generated scripts quote the SECRET_CMD expansion"
 
-    grep -q 'SECRET_CMD ?= secret' "$d/infra/ansible/Makefile"
-    check $? "$mode: ansible Makefile defaults SECRET_CMD to the rendered command"
+    # The make recipe hands the substituted value to /bin/sh, so it needs the
+    # same quoting.
+    grep -q '\$\$("\$(SECRET_CMD)"' "$d/infra/ansible/Makefile"
+    check $? "$mode: the ansible recipe quotes the SECRET_CMD expansion"
 
-    # The name is appended bare; there is no subcommand in the contract.
-    grep -q 'POSTGRES_MYAPP_PROD_PASSWORD="\$\$(\$(SECRET_CMD) infra/myapp/postgres_myapp_prod_password)"' \
-        "$d/infra/ansible/Makefile"
-    check $? "$mode: ansible recipe calls \$(SECRET_CMD) with the bare secret name"
+    grep -q 'SECRET_CMD ?= /usr/local/bin/secret' "$d/infra/ansible/Makefile"
+    check $? "$mode: ansible Makefile defaults SECRET_CMD to the rendered path"
 
     make -n -C "$d/infra/ansible" ansible 2>/dev/null |
-        grep -q 'secret infra/myapp/postgres_myapp_prod_password'
+        grep -q '"/usr/local/bin/secret" infra/myapp/postgres_myapp_prod_password'
     check $? "$mode: make expands the ansible recipe to the real command"
 
     make -n -C "$d" deploy ENV=production 2>/dev/null |
-        grep -q 'SECRET_CMD="secret".*./scripts/kamal-deploy.sh'
+        grep -q 'SECRET_CMD="/usr/local/bin/secret".*./scripts/kamal-deploy.sh'
     check $? "$mode: root Makefile deploy passes SECRET_CMD to the renamed script"
 
     if [ "$mode" = single ]; then
@@ -94,7 +95,6 @@ done
 
 # A wrapper documented in infra/kamal/README.md is copied verbatim and executed,
 # so its shebang has to be on byte 0 or the kernel falls back to sh.
-head -1 "$TMP/single/infra/kamal/README.md" >/dev/null
 awk '/^```sh$/ { want = 1; next } want { print; exit }' \
     "$TMP/single/infra/kamal/README.md" | grep -q '^#!'
 check $? "the wrapper example in kamal/README.md starts with its shebang"
@@ -118,22 +118,40 @@ accept() {
     check $? "SECRET_CMD '$1' is accepted"
 }
 
-reject 'env D=$(HOME)/x mytool'
-reject '~/bin/secret'
-reject 'mytool --store ~/vault'
+# Every form that five earlier rounds of review found slipping through some
+# looser version of this guard. Each one resolves to a different file depending
+# on which of the two call sites invokes it.
+reject 'bin/secret'
 reject './bin/secret'
 reject '../bin/secret'
-# A relative path with no leading dot is the same bug wearing a different hat:
-# any command word containing a slash resolves against cwd, never PATH.
-reject 'bin/secret'
-reject 'tools/get-secret --json'
+reject '~/bin/secret'
+reject 'secret'
+reject ' /usr/local/bin/secret'
+reject '/usr/local/bin/secret '
+reject '   '
+reject 'env FOO=bar bin/secret'
+reject '/usr/local/bin/secret --store infra/prod'
+# make hands the value to /bin/sh inside double quotes, which expands both.
+reject '/usr/local/bin/sec$ret'
+reject '/usr/local/bin/sec`id`ret'
 
-# The guard must not simply refuse everything. A bare PATH command, an absolute
-# path, and a fixed argument that happens to contain a slash are all legitimate:
-# the path rules apply to the command word, not to its arguments.
-accept secret
+# The guard must not simply refuse everything.
 accept /usr/local/bin/secret
-accept 'secret --store infra/prod'
+accept /opt/vendor/bin/get-secret
+
+# `require` used to accept a whitespace-only value, which then reached the
+# templates and, in the ansible recipe, would have run the secret NAME as a
+# command. Any required variable, not just SECRET_CMD.
+d="$TMP/blank"
+rm -rf "$d"
+mkdir -p "$d"
+APP_SLUG='   ' APP_SERVICE=my-app APP_SLUG_UPPER=MYAPP INVENTORY_GROUP=myapp \
+VPS_IP=203.0.113.10 DOMAIN_PROD=example.com DOMAIN_STAGING= \
+LETSENCRYPT_EMAIL=admin@example.com DEPLOY_USER=myapp_deploy IMAGE_REPO=myorg/my-app \
+SECRET_CMD=/usr/local/bin/secret SECRET_NAMESPACE=infra/myapp ENV_MODE=single \
+TARGET_DIR="$d" "$SKILL/scripts/render.sh" >/dev/null 2>&1
+[ $? = 2 ]
+check $? "a whitespace-only required variable is rejected with exit 2"
 
 total=$((pass + fail))
 if [ "$fail" = 0 ]; then

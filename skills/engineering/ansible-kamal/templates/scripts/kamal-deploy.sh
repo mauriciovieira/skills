@@ -2,22 +2,21 @@
 # Local Kamal deploy: load secrets from the configured secret command and run kamal deploy.
 # Usage: ENV=staging|production make deploy   (from repo root)
 set -euo pipefail
-# secret() expands $SECRET_CMD unquoted to allow fixed arguments; unquoted
-# expansion also globs, so disable pathname expansion. Nothing here needs it.
-set -f
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Command that prints the secret named by its last argument to stdout.
-# Override per invocation: SECRET_CMD=secret ENV=production make deploy
+# Absolute path to a command that prints the secret named by its argument to
+# stdout. Override per invocation:
+#   SECRET_CMD=/usr/local/bin/secret ENV=production make deploy
 SECRET_CMD="${SECRET_CMD:-__SECRET_CMD__}"
 
 VPS_HOST="${VPS_HOST:-__VPS_IP__}"
 
-# Unquoted on purpose: SECRET_CMD may carry fixed arguments ahead of the name.
+# SECRET_CMD is an absolute path with no arguments, so the expansion is quoted:
+# no word splitting, no globbing, nothing to disable.
 secret() {
-  $SECRET_CMD "$1"
+  "$SECRET_CMD" "$1"
 }
 
 docker info >/dev/null 2>&1 || {

@@ -21,13 +21,21 @@ open. The suite also asks the prefixed-and-suffixed question of every credential
 than of one, after a rule tested only at its literal spelling shipped as an exact match while
 95 assertions stayed green.
 
-`ansible-kamal/test/render.sh` is 33 assertions over the renderer, which writes a deploy tree
+`ansible-kamal/test/render.sh` is 38 assertions over the renderer, which writes a deploy tree
 into somebody else's project. It renders into a temp directory in both `ENV_MODE`s and asserts
 that no placeholder and no secret-manager-specific string leaks into the output, that the
-generated scripts parse, and that `make` expands the recipes to the real command. Then it works
-both sides of the `SECRET_CMD` guard: every forbidden form refused - `$`, `~`, and a relative
-path whether or not it leads with a dot - and every legitimate one accepted, including a fixed
-argument that contains a slash, since the path rules apply to the command word alone.
+generated scripts parse, that they and the ansible recipe all quote the `SECRET_CMD`
+expansion, and that `make` expands the recipes to the real command.
+
+Then it works both sides of that skill's `SECRET_CMD` guard, and the reject list is the more
+interesting half: it is the accumulated record of five review rounds, each of which found a
+value that some looser version of the guard admitted. A relative path with a leading dot and
+one without; a leading `~`; a bare name resolved through `PATH`; a leading or trailing space;
+a value that is only spaces; a wrapper like `env FOO=bar bin/secret` whose own first word
+hides the relative path; fixed arguments; a `$`; a backtick. Each of those resolved to one
+file from the project root and another from `infra/ansible`. The contract is now an absolute
+path with no arguments, which is the narrowest thing that cannot diverge, and two accept cases
+keep the guard from passing by refusing everything.
 
 `control` runs any `*.sh` under a `test` path inside the skill's directory, so a further skill
 that grows a test is picked up with no change here - which is what happened with `grilling`,
@@ -48,18 +56,23 @@ review workflow reviews the diff; it does not run anything.
 ```
 
 Observable outcome: `own-tests ok  run.sh: 147/147 OK`, `own-tests ok  run.sh: 34/34 OK`, and
-`own-tests ok  render.sh: 33/33 OK`. Skills with no test read `skip  none`, which is a fact,
+`own-tests ok  render.sh: 38/38 OK`. Skills with no test read `skip  none`, which is a fact,
 not a pass.
 
 ## Known failure modes
 
 Proven to fail: dropping the `(?<![A-Za-z_])` lookbehind from the hook's Bash write pattern
 fails assertion 24 of `grilling/test/run.sh`, and dropping its cross-session branch fails
-assertion 29. Also proven: removing the `set -f` line from
-`ansible-kamal/templates/scripts/kamal-deploy.sh` fails `render.sh` twice, once per
-`ENV_MODE`, with `both generated scripts disable globbing`. And narrowing that skill's
-relative-path guard back to `./*|../*` fails the two assertions covering a relative path
-with no leading dot, which is how that gap was found in the first place.
+assertion 29.
+
+Also proven, in `ansible-kamal`: unquoting the `SECRET_CMD` expansion in
+`templates/scripts/kamal-deploy.sh` fails `render.sh` twice, once per `ENV_MODE`, with
+`both generated scripts quote the SECRET_CMD expansion`. Two earlier proofs in that skill
+are gone rather than stale - the code they poked no longer exists. Removing a `set -f` line
+used to fail it, but quoting the expansion made `set -f` unnecessary; and narrowing the
+relative-path guard back to `./*|../*` used to fail it, but the guard no longer enumerates
+relative forms at all. A feature map that keeps a proof of a construct that has been deleted
+is worse than one that admits the proof retired with it.
 
 `review-with-jev` was mutation-checked one hole at a time, because reverting several together
 hides a useless assertion behind a working one. Turning off `shopt -s nocasematch` fails 11,
