@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.15] - 2026-09-22
+
+### Fixed
+
+- close three holes in the evidence guard ([#26](https://github.com/mauriciovieira/skills/pull/26))
+- unanchor pgpass and htpasswd too ([#26](https://github.com/mauriciovieira/skills/pull/26))
+- close four more holes the security review found ([#26](https://github.com/mauriciovieira/skills/pull/26))
+
 ## [0.2.14] - 2026-09-21
 
 ### Changed
