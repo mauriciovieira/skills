@@ -53,7 +53,10 @@ classify() {
 
   case "/$p/" in
     */.ssh/*|*/.aws/*|*/.gnupg/*) echo "$SECRET_REASON"; return ;;
-    */secrets/*|*.secrets/*) echo "$SECRET_REASON"; return ;;
+    # credentials/ as a DIRECTORY, not just a basename: credentials/prod.json
+    # is the stock GCP service-account layout, and the basename rule below
+    # only ever saw "prod.json".
+    */secrets/*|*.secrets/*|*/credentials/*) echo "$SECRET_REASON"; return ;;
   esac
 
   # Sample/example/template env files are fine: they exist to be read and hold
@@ -62,7 +65,15 @@ classify() {
   # printed line and under-excluding ships a credential to a third party.
   case "$base" in
     *.example|*.sample|*.template) ;;
-    .env|.env.*|*.env|.envrc) echo "$SECRET_REASON"; return ;;
+    # `*.env.*` and `*.env~`, not `*.env*`: the wide form swallows
+    # src/environment.ts and src/dotenv.parser.ts, which are source. This
+    # family was the ONE left anchored at the end after the commit that
+    # unanchored everything else - production.env.bak, prod.env.old,
+    # staging.env.orig and the editor backup dev.env~ all read as ordinary
+    # files. .orig is what a conflicted merge leaves; .bak and .old are what a
+    # human leaves. The carve-out above still runs first, so
+    # prod.env.example stays included.
+    .env|.env.*|*.env|*.env.*|*.env~|.envrc) echo "$SECRET_REASON"; return ;;
   esac
 
   # Matched with the prefixes AND trailing suffixes these files carry in the
@@ -114,7 +125,25 @@ handle() {
   [ -n "$p" ] || return 0
   # Decoration from a git wrapper is reported as skipped, never dropped in
   # silence - the header promises nothing vanishes without a line.
-  reason="$(classify "$p")"
+  # Classify a NORMALISED copy, but print $p exactly as it arrived - the
+  # caller needs the original bytes to open the file.
+  #
+  # git's core.quotePath defaults to true, so any path with a byte over 0x7F,
+  # a quote, a backslash or a control character comes out of `git diff
+  # --name-only` and `git ls-files --others` wrapped in double quotes with
+  # octal escapes. The trailing quote then lands at the end of the basename and
+  # defeats every rule anchored there. Measured: "configura\303\247\303\243o/.env"
+  # classified as include with exit 0, while the same path unquoted excludes
+  # correctly. An accented directory name is ordinary in a Portuguese repo, and
+  # so is any CJK, Cyrillic or emoji path. The octal escapes inside are inert
+  # for shape matching, so they need no decoding.
+  #
+  # Trailing spaces go the same way, and for the same reason: `.env ` is a
+  # real filename that every end-anchored rule misses.
+  q="$p"
+  case "$q" in \"*\") q="${q#\"}"; q="${q%\"}" ;; esac
+  while [ "${q% }" != "$q" ]; do q="${q% }"; done
+  reason="$(classify "$q")"
   # Decoration is a DIFF MARKER, not any leading dash. Matching `-*` meant
   # `-prod.env` and `-id_rsa` printed "not a path", left found_secret at 0 and
   # exited the whole list clean: a file named with a dash disarmed the secret
@@ -139,7 +168,14 @@ handle() {
 if [ "$#" -gt 0 ]; then
   for p in "$@"; do handle "$p"; done
 else
-  while IFS= read -r p; do handle "$p"; done
+  # `|| [ -n "$p" ]`: read returns non-zero at EOF on a final line with no
+  # newline, so the body never runs and the path is dropped in silence -
+  # nothing printed, found_secret untouched, exit 0. The documented pipeline
+  # ends in `sort -u` and git always terminates its output, so this is not
+  # reachable as written; it bites any caller that builds the list itself with
+  # printf '%s' or a hand-built here-doc, and an agent composes those freely.
+  # It also breaks this file's own promise that exclusions are never dropped.
+  while IFS= read -r p || [ -n "$p" ]; do handle "$p"; done
 fi
 
 exit "$found_secret"

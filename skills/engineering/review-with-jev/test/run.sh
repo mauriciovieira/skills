@@ -150,6 +150,75 @@ do
   check "unanchored family: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
 done
 
+# --- the .env family, unanchored like every other ---------------------------
+# This family was the one left anchored at the end when everything else was
+# unanchored - and it is the family lines 20-21 name as the reason this script
+# exists. .orig is what a conflicted merge leaves behind; .bak and .old are
+# what a human leaves; dev.env~ is what emacs, gedit and vim leave, and an
+# `.env` line in .gitignore does not cover it, so it survives to reach here.
+for p in production.env.bak config.env.backup prod.env.old staging.env.orig \
+         'dev.env~' '.env '
+do
+  check "env suffix: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
+# The carve-out has to survive the widening, or every sample file gets withheld.
+for p in .env.example prod.env.example config.env.sample
+do
+  check "env sample still ok: $p" "include $p" "$(verdict "$p")"
+done
+
+# `*.env.*` and not `*.env*`, because the wide form eats these.
+for p in src/environment.ts src/dotenv.parser.ts
+do
+  check "env lookalike: $p" "include $p" "$(verdict "$p")"
+done
+
+# --- git quotes paths, and the quote lands where the rules are anchored -----
+# core.quotePath defaults to true, so any path with a byte over 0x7F, a quote,
+# a backslash or a control character arrives wrapped. The trailing " then sits
+# at the end of the basename and defeats every end-anchored rule. An accented
+# directory is ordinary in a Portuguese repo. The path must still be PRINTED
+# exactly as git gave it - the caller needs those bytes to open the file.
+quoted='"configura\303\247\303\243o/.env"'
+check "quoted path excluded" "exclude $quoted credential-shaped path" "$(verdict "$quoted")"
+quoted2='"configura\303\247\303\243o/credentials"'
+check "quoted credentials" "exclude $quoted2 credential-shaped path" "$(verdict "$quoted2")"
+bash "$GUARD" src/main.ts "$quoted" >/dev/null 2>&1
+check "quoted path exits 2" "2" "$?"
+
+# --- a credential directory, not just a credential basename -----------------
+# credentials/service-account.json is the stock GCP layout; the basename rule
+# only ever saw "service-account.json".
+for p in credentials/prod.json config/credentials/db.yml credentials/service-account.json
+do
+  check "credential dir: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
+# --- stdin with no trailing newline -----------------------------------------
+# `read` returns non-zero at EOF on an unterminated final line, so without the
+# `|| [ -n "$p" ]` guard the last path is dropped in silence: nothing printed,
+# found_secret untouched, exit 0. That breaks this file's own promise that
+# exclusions are printed, never dropped.
+out="$(printf 'src/a.ts\n.env' | bash "$GUARD" 2>/dev/null)"
+check "stdin, no final newline" "include src/a.ts
+exclude .env credential-shaped path" "$out"
+printf 'src/a.ts\n.env' | bash "$GUARD" >/dev/null 2>&1
+check "stdin no-newline exits 2" "2" "$?"
+
+# --- the cost of nocasematch, recorded rather than discovered ---------------
+# Making every rule case-insensitive also catches ordinary source whose name
+# happens to be a credential word: Credentials.cs and Secrets.cs are .NET
+# source, Config.Keys.ts is a TypeScript constant module. They are WITHHELD.
+# That is over-exclusion, the side of the trade this file accepts, and each one
+# prints its reason so the caller can see the call and override it - but the
+# file under review can vanish from the evidence package this way, so the
+# behaviour is pinned here instead of being rediscovered as a surprise.
+for p in src/Credentials.cs src/Secrets.cs Auth/Credentials.razor src/Config.Keys.ts
+do
+  check "nocasematch cost: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
 # --- the EXIT CODE, not just the printed lines ------------------------------
 # Both holes showed up here first. A test comparing only stdout passes with the
 # gate wide open, because the lines can be right while the code says clean.
