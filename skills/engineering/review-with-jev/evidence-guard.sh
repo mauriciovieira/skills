@@ -73,7 +73,13 @@ classify() {
     # files. .orig is what a conflicted merge leaves; .bak and .old are what a
     # human leaves. The carve-out above still runs first, so
     # prod.env.example stays included.
-    .env|.env.*|*.env|*.env.*|*.env~|.envrc) echo "$SECRET_REASON"; return ;;
+    # `*envrc*` and not `.envrc`: .envrc.local is a direnv convention
+    # (source_env_if_exists), .envrc~ is the same editor backup that `*.env~`
+    # above exists for, and .envrc holds live `export AWS_SECRET_ACCESS_KEY`.
+    # Widening this one is free - it cannot swallow src/environment.ts or
+    # src/dotenv.parser.ts, which is what `*.env.*` was written carefully to
+    # avoid.
+    .env|.env.*|*.env|*.env.*|*.env~|*envrc*) echo "$SECRET_REASON"; return ;;
   esac
 
   # Matched with the prefixes AND trailing suffixes these files carry in the
@@ -135,14 +141,37 @@ handle() {
   # defeats every rule anchored there. Measured: "configura\303\247\303\243o/.env"
   # classified as include with exit 0, while the same path unquoted excludes
   # correctly. An accented directory name is ordinary in a Portuguese repo, and
-  # so is any CJK, Cyrillic or emoji path. The octal escapes inside are inert
-  # for shape matching, so they need no decoding.
+  # so is any CJK, Cyrillic or emoji path. The OCTAL escapes inside are inert
+  # for shape matching and need no decoding - but the single-letter ones are
+  # not, because `\t` at the end of a name defeats an end-anchored rule as
+  # surely as a real tab would. The loop below strips those too.
   #
   # Trailing spaces go the same way, and for the same reason: `.env ` is a
   # real filename that every end-anchored rule misses.
+  # A LOOP, not a fixed sequence. The first version stripped one balanced
+  # quote pair and then trimmed literal spaces, in that order, and every other
+  # shape got through: `.env<TAB>`, `.env"`, `"".env""` and `".env" ` all
+  # classified as include with exit 0. Confirmed end to end - a file named
+  # `.env<TAB>` holding a token reached the outbound payload while the run
+  # reported "declined".
+  #
+  # The two quote ends are stripped INDEPENDENTLY, not as a balanced pair. A
+  # pair only covers what quotePath wraps; `git diff -z`, which is what
+  # jev-triage uses, hands over the raw name, so a file actually named `.env"`
+  # arrives with one quote and a balanced rule never fires. `?*` on each side
+  # keeps at least one character, so nothing is stripped down to nothing.
+  #
+  # The `\\[tnrvf]` case is the part the header used to get wrong. quotePath
+  # escapes a tab as the two characters backslash-t, not as a tab, so no
+  # amount of whitespace trimming reaches it and `".env\t"` stayed include.
   q="$p"
-  case "$q" in \"*\") q="${q#\"}"; q="${q%\"}" ;; esac
-  while [ "${q% }" != "$q" ]; do q="${q% }"; done
+  while :; do
+    case "$q" in *[[:space:]]) q="${q%?}"; continue ;; esac
+    case "$q" in *\\[tnrvf]) q="${q%??}"; continue ;; esac
+    case "$q" in \"?*) q="${q#\"}"; continue ;; esac
+    case "$q" in ?*\") q="${q%\"}"; continue ;; esac
+    break
+  done
   reason="$(classify "$q")"
   # Decoration is a DIFF MARKER, not any leading dash. Matching `-*` meant
   # `-prod.env` and `-id_rsa` printed "not a path", left found_secret at 0 and

@@ -219,6 +219,46 @@ do
   check "nocasematch cost: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
 done
 
+# --- one path in, exactly one line out --------------------------------------
+# verdict() reads only the first line, so a guard that printed two lines for
+# one path would pass every other assertion in this file. jev-triage balances
+# include + exclude against the number of paths it sent, so a duplicated line
+# is exactly the failure worth catching.
+for p in .env src/app.ts vendor/x.go
+do
+  n=$(bash "$GUARD" "$p" 2>/dev/null | wc -l | tr -d ' ')
+  check "one line for $p" "1" "$n"
+done
+
+# --- whitespace and quotes, beyond a single trailing space ------------------
+# The first normaliser stripped one balanced quote pair and then literal
+# spaces, in that order. Everything else got through, and a file named
+# `.env<TAB>` reached the outbound payload while the run reported "declined".
+# `".env\t"` is what git emits under core.quotePath for a real tab: the two
+# characters backslash and t, which no whitespace trim can reach.
+for p in '.env	' '.env"' '"".env""' '".env" ' '".env\t"' '".env"'
+do
+  check "normalised: [$p]" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+bash "$GUARD" src/main.ts '.env	' >/dev/null 2>&1
+check "tabbed secret exits 2" "2" "$?"
+bash "$GUARD" src/main.ts '.env"' >/dev/null 2>&1
+check "quoted secret exits 2" "2" "$?"
+# Stripping must never eat a legitimate name, nor reduce one to nothing.
+for p in 'a"b.py' src/environment.ts src/dotenv.parser.ts
+do
+  check "normalise keeps: $p" "include $p" "$(verdict "$p")"
+done
+
+# --- the .envrc family, unanchored like the rest ----------------------------
+# .envrc was the one member left exact-anchored while the comment above it
+# claimed the family had been unanchored. .envrc.local is a direnv convention
+# and .envrc~ is the same editor backup `*.env~` exists for.
+for p in .envrc .envrc.local .envrc.bak '.envrc~' dev.envrc
+do
+  check "envrc: $p" "exclude $p credential-shaped path" "$(verdict "$p")"
+done
+
 # --- the EXIT CODE, not just the printed lines ------------------------------
 # Both holes showed up here first. A test comparing only stdout passes with the
 # gate wide open, because the lines can be right while the code says clean.
