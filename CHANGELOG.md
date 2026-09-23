@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.16] - 2026-09-23
+
+### Fixed
+
+- normalise a path properly, and unanchor .envrc ([#27](https://github.com/mauriciovieira/skills/pull/27))
+
 ## [0.2.15] - 2026-09-22
 
 ### Fixed
