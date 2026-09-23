@@ -70,10 +70,10 @@ esac
 # file from the project root and another from infra/ansible - a relative path
 # with or without a leading dot, a leading ~, a leading space, and a wrapper
 # like `env FOO=bar bin/secret` that hides the real executable behind its own
-# first word. An absolute path with no arguments cannot do that, and it lets the
-# generated scripts quote the expansion, which removes word splitting and
-# globbing too. Anything more elaborate goes in a wrapper script, which the
-# generated infra/kamal/README.md shows how to write.
+# first word. An absolute path with no arguments does not resolve against the
+# caller's directory, and it lets the generated scripts quote the expansion,
+# which removes word splitting and globbing too. Anything more elaborate goes in
+# a wrapper script, which the generated infra/kamal/README.md shows how to write.
 case "$SECRET_CMD" in
   *[[:space:]]*)
     echo "ERROR: SECRET_CMD must not contain whitespace - no arguments, and no" >&2
@@ -85,6 +85,24 @@ case "$SECRET_CMD" in
     echo "ERROR: SECRET_CMD must not contain '\$' or a backtick - a make recipe" >&2
     echo "       hands the value to /bin/sh, which expands both, while the" >&2
     echo "       generated scripts do not." >&2
+    exit 2
+    ;;
+  # Do not delete this arm because it looks like noise in a guard about paths.
+  # On Linux, /proc/self/cwd is a symlink the kernel re-resolves to whichever
+  # process is reading it, at the moment it reads. So /proc/self/cwd/bin/secret
+  # starts with a slash, passes every check above, and is still relative to the
+  # caller's directory - the one thing this whole guard exists to prevent. Same
+  # for /proc/self/fd/N, /proc/self/root and /proc/<pid>/cwd.
+  #
+  # This catches the ordinary spellings and the two trivial aliases. It does NOT
+  # catch a path that reaches /proc the long way, such as /opt/../proc/self/cwd.
+  # Closing that needs the path resolved on the machine that will run it, which
+  # the renderer is not: it may be a macOS laptop with no /proc at all. The
+  # guarantee here is "no accidental cwd-dependent path", not "provably none".
+  /proc/*|//proc/*|/./proc/*)
+    echo "ERROR: SECRET_CMD must not be under /proc - the kernel re-resolves" >&2
+    echo "       paths like /proc/self/cwd against whichever process reads them," >&2
+    echo "       so they are relative in disguise. Use a real path." >&2
     exit 2
     ;;
   /*) ;;

@@ -135,9 +135,22 @@ reject '/usr/local/bin/secret --store infra/prod'
 reject '/usr/local/bin/sec$ret'
 reject '/usr/local/bin/sec`id`ret'
 
+# /proc paths start with a slash and are still relative: the kernel re-resolves
+# them against whoever reads them. Asked of every magic entry and of the two
+# trivial aliases, not just the one spelling a review happened to name - a rule
+# tested at its literal spelling alone is a rule tested nowhere.
+reject '/proc/self/cwd/bin/secret'
+reject '/proc/self/fd/3'
+reject '/proc/self/root/usr/bin/secret'
+reject '/proc/1234/cwd/bin/secret'
+reject '//proc/self/cwd/bin/secret'
+reject '/./proc/self/cwd/bin/secret'
+
 # The guard must not simply refuse everything.
 accept /usr/local/bin/secret
 accept /opt/vendor/bin/get-secret
+# A path that merely contains the letters is not a /proc path.
+accept /opt/procurement/bin/secret
 
 # `require` used to accept a whitespace-only value, which then reached the
 # templates and, in the ansible recipe, would have run the secret NAME as a

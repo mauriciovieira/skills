@@ -21,7 +21,7 @@ open. The suite also asks the prefixed-and-suffixed question of every credential
 than of one, after a rule tested only at its literal spelling shipped as an exact match while
 95 assertions stayed green.
 
-`ansible-kamal/test/render.sh` is 38 assertions over the renderer, which writes a deploy tree
+`ansible-kamal/test/render.sh` is 45 assertions over the renderer, which writes a deploy tree
 into somebody else's project. It renders into a temp directory in both `ENV_MODE`s and asserts
 that no placeholder and no secret-manager-specific string leaks into the output, that the
 generated scripts parse, that they and the ansible recipe all quote the `SECRET_CMD`
@@ -34,8 +34,11 @@ one without; a leading `~`; a bare name resolved through `PATH`; a leading or tr
 a value that is only spaces; a wrapper like `env FOO=bar bin/secret` whose own first word
 hides the relative path; fixed arguments; a `$`; a backtick. Each of those resolved to one
 file from the project root and another from `infra/ansible`. The contract is now an absolute
-path with no arguments, which is the narrowest thing that cannot diverge, and two accept cases
-keep the guard from passing by refusing everything.
+path with no arguments, which is the narrowest thing that cannot diverge by accident, and three
+accept cases keep the guard from passing by refusing everything. The reject list asks the
+question of a whole class rather than of the one spelling a review named: the `/proc` entries
+cover `self/cwd`, `self/fd`, `self/root` and `<pid>/cwd` plus two aliases, because a rule
+tested at its literal spelling alone is a rule tested nowhere.
 
 `control` runs any `*.sh` under a `test` path inside the skill's directory, so a further skill
 that grows a test is picked up with no change here - which is what happened with `grilling`,
@@ -56,7 +59,7 @@ review workflow reviews the diff; it does not run anything.
 ```
 
 Observable outcome: `own-tests ok  run.sh: 147/147 OK`, `own-tests ok  run.sh: 34/34 OK`, and
-`own-tests ok  render.sh: 38/38 OK`. Skills with no test read `skip  none`, which is a fact,
+`own-tests ok  render.sh: 45/45 OK`. Skills with no test read `skip  none`, which is a fact,
 not a pass.
 
 ## Known failure modes
@@ -65,7 +68,10 @@ Proven to fail: dropping the `(?<![A-Za-z_])` lookbehind from the hook's Bash wr
 fails assertion 24 of `grilling/test/run.sh`, and dropping its cross-session branch fails
 assertion 29.
 
-Also proven, in `ansible-kamal`: unquoting the `SECRET_CMD` expansion in
+Also proven, in `ansible-kamal`, one mutation at a time: deleting the `/proc` arm from the
+guard fails 6 assertions and leaves the near-miss accept `/opt/procurement/bin/secret` green,
+so the arm is doing the work and not simply refusing everything. And unquoting the
+`SECRET_CMD` expansion in
 `templates/scripts/kamal-deploy.sh` fails `render.sh` twice, once per `ENV_MODE`, with
 `both generated scripts quote the SECRET_CMD expansion`. Two earlier proofs in that skill
 are gone rather than stale - the code they poked no longer exists. Removing a `set -f` line
