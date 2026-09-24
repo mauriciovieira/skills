@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.19] - 2026-09-24
+
+### Fixed
+
+- drop a pattern the line above already matches ([#29](https://github.com/mauriciovieira/skills/pull/29))
+
 ## [0.2.18] - 2026-09-24
 
 ### Fixed
