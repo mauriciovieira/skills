@@ -11,7 +11,7 @@
 # >>> staging-only
       and POSTGRES___APP_SLUG_UPPER___STAGING_PASSWORD
 # <<< staging-only
-      (e.g. make ansible with custom), or pass -e for automation.
+      (e.g. make ansible, which reads them through SECRET_CMD), or pass -e for automation.
 
 - name: Discover Docker networks for PostgreSQL listen addresses and pg_hba CIDRs
   ansible.builtin.import_tasks: discover.yml

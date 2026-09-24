@@ -4,7 +4,7 @@ A skill that ships a test still passes it after the skill is edited.
 
 ## What exists today
 
-Two skills ship an executable test. `grilling/test/run.sh` is a three-line wrapper around
+Three skills ship an executable test. `grilling/test/run.sh` is a three-line wrapper around
 `test_grill_stop.py`, 34 assertions over synthetic transcripts covering the Stop hook the
 skill ships in `grilling/hooks/`.
 
@@ -21,6 +21,25 @@ open. The suite also asks the prefixed-and-suffixed question of every credential
 than of one, after a rule tested only at its literal spelling shipped as an exact match while
 95 assertions stayed green.
 
+`ansible-kamal/test/render.sh` is 54 assertions over the renderer, which writes a deploy tree
+into somebody else's project. It renders into a temp directory in both `ENV_MODE`s and asserts
+that no placeholder and no secret-manager-specific string leaks into the output, that the
+generated scripts parse, that they and the ansible recipe all quote the `SECRET_CMD`
+expansion, and that `make` expands the recipes to the real command.
+
+Then it works both sides of that skill's `SECRET_CMD` guard, and the reject list is the more
+interesting half: it is the accumulated record of five review rounds, each of which found a
+value that some looser version of the guard admitted. A relative path with a leading dot and
+one without; a leading `~`; a bare name resolved through `PATH`; a leading or trailing space;
+a value that is only spaces; a wrapper like `env FOO=bar bin/secret` whose own first word
+hides the relative path; fixed arguments; a `$`; a backtick. Each of those resolved to one
+file from the project root and another from `infra/ansible`. The contract is now an absolute
+path with no arguments, which is the narrowest thing that cannot diverge by accident, and three
+accept cases keep the guard from passing by refusing everything. The reject list asks the
+question of a whole class rather than of the one spelling a review named: the `/proc` entries
+cover `self/cwd`, `self/fd`, `self/root` and `<pid>/cwd` plus two aliases, because a rule
+tested at its literal spelling alone is a rule tested nowhere.
+
 `control` runs any `*.sh` under a `test` path inside the skill's directory, so a further skill
 that grows a test is picked up with no change here - which is what happened with `grilling`,
 and why its Python test ships behind a `run.sh` wrapper rather than teaching `control` a
@@ -36,10 +55,11 @@ review workflow reviews the diff; it does not run anything.
 ```
 ./control drive review-with-jev
 ./control drive grilling
+./control drive ansible-kamal
 ```
 
-Observable outcome: `own-tests ok  run.sh: 147/147 OK`, and
-`own-tests ok  run.sh: 34/34 OK`. Skills with no test read `skip  none`, which is a fact,
+Observable outcome: `own-tests ok  run.sh: 147/147 OK`, `own-tests ok  run.sh: 34/34 OK`, and
+`own-tests ok  render.sh: 54/54 OK`. Skills with no test read `skip  none`, which is a fact,
 not a pass.
 
 ## Known failure modes
@@ -47,6 +67,23 @@ not a pass.
 Proven to fail: dropping the `(?<![A-Za-z_])` lookbehind from the hook's Bash write pattern
 fails assertion 24 of `grilling/test/run.sh`, and dropping its cross-session branch fails
 assertion 29.
+
+Also proven, in `ansible-kamal`, one mutation at a time: deleting the `/proc` arm from the
+guard fails 6 assertions and leaves the near-miss accept `/opt/procurement/bin/secret` green,
+so the arm is doing the work and not simply refusing everything. Narrowing `require` back from
+`[[:space:]]` to a literal space fails 6 and leaves the three space-only cases green, which is
+how the space cases earn their place: they are the control that proves the other six test the
+new path. Writing those six with `$(printf '\n')` instead of `$'\n'` made three of them pass
+against the bug, because command substitution strips the trailing newline and the value
+arrived empty - a green assertion measuring the wrong check. And unquoting the
+`SECRET_CMD` expansion in
+`templates/scripts/kamal-deploy.sh` fails `render.sh` twice, once per `ENV_MODE`, with
+`both generated scripts quote the SECRET_CMD expansion`. Two earlier proofs in that skill
+are gone rather than stale - the code they poked no longer exists. Removing a `set -f` line
+used to fail it, but quoting the expansion made `set -f` unnecessary; and narrowing the
+relative-path guard back to `./*|../*` used to fail it, but the guard no longer enumerates
+relative forms at all. A feature map that keeps a proof of a construct that has been deleted
+is worse than one that admits the proof retired with it.
 
 `review-with-jev` was mutation-checked one hole at a time, because reverting several together
 hides a useless assertion behind a working one. Turning off `shopt -s nocasematch` fails 11,
@@ -60,5 +97,5 @@ The number in this file has now been wrong twice, both times because a PR grew t
 left the map behind. A feature map that misstates its own coverage is worse than no map, so
 the number and the prose move with the suite or the suite is not done.
 
-42 of 44 skills have no test at all. This check does not pretend otherwise; it reports `skip`,
+41 of 44 skills have no test at all. This check does not pretend otherwise; it reports `skip`,
 and a `skip` is not evidence of anything.

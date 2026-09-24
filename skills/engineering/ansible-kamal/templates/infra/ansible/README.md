@@ -29,7 +29,7 @@ infra/ansible/
 - **Two SSH keys**:
   1. A key already in `root@<server>`'s `authorized_keys` — runs `bootstrap.yml` as root.
   2. A dedicated deploy key pair (private for Kamal/CI; public goes to bootstrap as `deploy_ssh_key`).
-- `pass` / `custom` with secrets under your chosen namespace (`__PASS_NAMESPACE__/...`). See [`../kamal/README.md`](../kamal/README.md).
+- A secret manager reachable through `SECRET_CMD`, with secrets under your chosen namespace (`__SECRET_NAMESPACE__/...`). See [`../kamal/README.md`](../kamal/README.md).
 
 ## Local setup
 
@@ -52,7 +52,7 @@ DEPLOY_SSH_KEY="$(cat ~/.ssh/__DEPLOY_USER__.pub)" make bootstrap
 
 ## Full provision (`site.yml`)
 
-Run after bootstrap so `make ansible` can SSH as the deploy user. Loads PG passwords via `pass`:
+Run after bootstrap so `make ansible` can SSH as the deploy user. Loads the PG passwords through `SECRET_CMD`:
 
 ```bash
 cd infra/ansible

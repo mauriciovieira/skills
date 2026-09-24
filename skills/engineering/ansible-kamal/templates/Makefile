@@ -4,7 +4,8 @@
 #   ## Category :: name ## description
 # The `help` target (default) parses it with awk and prints the table.
 
-PASSWORD_STORE_DIR ?= __PASS_STORE_DIR_RAW__
+# Command that prints the secret named by its last argument to stdout.
+SECRET_CMD ?= __SECRET_CMD__
 VPS_HOST ?= __VPS_IP__
 
 IMAGE ?= __APP_SERVICE__:local
@@ -114,7 +115,7 @@ run-local:
 
 ## Deploy :: deploy ## Deploy via Kamal (ENV=staging|production)
 deploy: require-env
-	@ENV=$(ENV) PASSWORD_STORE_DIR="$(PASSWORD_STORE_DIR)" VPS_HOST="$(VPS_HOST)" ./scripts/kamal-deploy-from-pass.sh
+	@ENV=$(ENV) SECRET_CMD="$(SECRET_CMD)" VPS_HOST="$(VPS_HOST)" ./scripts/kamal-deploy.sh
 
 ## Kamal (ENV required) :: logs ## Container logs (ROLE=web|worker N=200 FOLLOW=1)
 logs: require-env
@@ -162,4 +163,4 @@ ansible-run:
 
 ## DB :: db-restore-from-vps ## Restore a VPS dump into the local database (ENV=staging|production)
 db-restore-from-vps: require-env
-	@ENV=$(ENV) PASSWORD_STORE_DIR="$(PASSWORD_STORE_DIR)" ./scripts/db-restore-from-vps.sh
+	@ENV=$(ENV) SECRET_CMD="$(SECRET_CMD)" ./scripts/db-restore-from-vps.sh

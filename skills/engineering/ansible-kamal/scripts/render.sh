@@ -13,14 +13,14 @@
 #   LETSENCRYPT_EMAIL e.g. admin@example.com
 #   DEPLOY_USER       e.g. myapp_deploy
 #   IMAGE_REPO        e.g. myorg/myapp
-#   PASS_BACKEND      custom|pass
-#   PASS_NAMESPACE    e.g. infra/myapp
+#   SECRET_CMD        absolute path to a command that prints a secret to stdout,
+#                     with no arguments, e.g. '/usr/local/bin/secret'
+#   SECRET_NAMESPACE  prefix for every secret name, e.g. infra/myapp
 #   ENV_MODE          staging+production|single
 #   TARGET_DIR        path to project root
 #
 # Optional:
 #   DOMAIN_STAGING    required if ENV_MODE=staging+production; ignored otherwise
-#   PASS_STORE_DIR    e.g. '$(HOME)/.password-store-custom'  (Makefile-form, used as-is)
 #   FORCE             1 to overwrite existing infra/ansible
 #
 # Usage:
@@ -30,8 +30,11 @@ set -euo pipefail
 
 require() {
   local var="$1"
-  if [[ -z "${!var:-}" ]]; then
-    echo "ERROR: required env var $var is empty" >&2
+  # [[:space:]] and not a literal " ": a tab-only value used to pass here, and
+  # a tab is IFS, so it word-split at the unquoted call sites in the generated
+  # scripts and silently dropped the namespace prefix from the secret name.
+  if [[ -z "${!var:-}" || -z "${!var//[[:space:]]/}" ]]; then
+    echo "ERROR: required env var $var is empty or only whitespace" >&2
     exit 2
   fi
 }
@@ -45,8 +48,8 @@ require DOMAIN_PROD
 require LETSENCRYPT_EMAIL
 require DEPLOY_USER
 require IMAGE_REPO
-require PASS_BACKEND
-require PASS_NAMESPACE
+require SECRET_CMD
+require SECRET_NAMESPACE
 require ENV_MODE
 require TARGET_DIR
 
@@ -63,25 +66,56 @@ case "$ENV_MODE" in
     ;;
 esac
 
-case "$PASS_BACKEND" in
-  custom)
-    PASS_STORE_DIR_DEFAULT='$(HOME)/.password-store-custom'
-    PASS_STORE_DIR_SHELL_DEFAULT="$HOME/.password-store-custom"
-    PASS_CMD_DEFAULT='env PASSWORD_STORE_DIR=$(HOME)/.password-store-custom pass'
+# SECRET_CMD is an absolute path to an executable, with no arguments. That is a
+# narrow contract on purpose. The value is baked into a Makefile and into two
+# /bin/sh scripts that run from different working directories, and five earlier
+# attempts to allow anything looser each admitted a value that resolved to one
+# file from the project root and another from infra/ansible - a relative path
+# with or without a leading dot, a leading ~, a leading space, and a wrapper
+# like `env FOO=bar bin/secret` that hides the real executable behind its own
+# first word. An absolute path with no arguments does not resolve against the
+# caller's directory, and it lets the generated scripts quote the expansion,
+# which removes word splitting and globbing too. Anything more elaborate goes in
+# a wrapper script, which the generated infra/kamal/README.md shows how to write.
+case "$SECRET_CMD" in
+  *[[:space:]]*)
+    echo "ERROR: SECRET_CMD must not contain whitespace - no arguments, and no" >&2
+    echo "       leading or trailing space. Put arguments inside a wrapper script" >&2
+    echo "       and name the wrapper." >&2
+    exit 2
     ;;
-  pass)
-    PASS_STORE_DIR_DEFAULT='$(HOME)/.password-store'
-    PASS_STORE_DIR_SHELL_DEFAULT="$HOME/.password-store"
-    PASS_CMD_DEFAULT='pass'
+  *'$'*|*'`'*)
+    echo "ERROR: SECRET_CMD must not contain '\$' or a backtick - a make recipe" >&2
+    echo "       hands the value to /bin/sh, which expands both, while the" >&2
+    echo "       generated scripts do not." >&2
+    exit 2
     ;;
+  # Do not delete this arm because it looks like noise in a guard about paths.
+  # On Linux, /proc/self/cwd is a symlink the kernel re-resolves to whichever
+  # process is reading it, at the moment it reads. So /proc/self/cwd/bin/secret
+  # starts with a slash, passes every check above, and is still relative to the
+  # caller's directory - the one thing this whole guard exists to prevent. Same
+  # for /proc/self/fd/N, /proc/self/root and /proc/<pid>/cwd.
+  #
+  # This catches the ordinary spellings and the two trivial aliases. It does NOT
+  # catch a path that reaches /proc the long way, such as /opt/../proc/self/cwd.
+  # Closing that needs the path resolved on the machine that will run it, which
+  # the renderer is not: it may be a macOS laptop with no /proc at all. The
+  # guarantee here is "no accidental cwd-dependent path", not "provably none".
+  /proc/*|//proc/*|/./proc/*)
+    echo "ERROR: SECRET_CMD must not be under /proc - the kernel re-resolves" >&2
+    echo "       paths like /proc/self/cwd against whichever process reads them," >&2
+    echo "       so they are relative in disguise. Use a real path." >&2
+    exit 2
+    ;;
+  /*) ;;
   *)
-    echo "ERROR: PASS_BACKEND must be 'custom' or 'pass'" >&2
+    echo "ERROR: SECRET_CMD must be an absolute path - it is invoked from the" >&2
+    echo "       project root and from infra/ansible, which are different" >&2
+    echo "       directories, so anything relative names two different files." >&2
     exit 2
     ;;
 esac
-
-PASS_STORE_DIR_RAW="${PASS_STORE_DIR:-$PASS_STORE_DIR_DEFAULT}"
-PASS_STORE_DIR_SHELL="${PASS_STORE_DIR_SHELL:-$PASS_STORE_DIR_SHELL_DEFAULT}"
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATES_DIR="$SKILL_DIR/templates"
@@ -133,10 +167,8 @@ substitute_vars() {
     -e "s${sep}__LETSENCRYPT_EMAIL__${sep}${LETSENCRYPT_EMAIL}${sep}g" \
     -e "s${sep}__DEPLOY_USER__${sep}${DEPLOY_USER}${sep}g" \
     -e "s${sep}__IMAGE_REPO__${sep}${IMAGE_REPO}${sep}g" \
-    -e "s${sep}__PASS_NAMESPACE__${sep}${PASS_NAMESPACE}${sep}g" \
-    -e "s${sep}__PASS_STORE_DIR_RAW__${sep}${PASS_STORE_DIR_RAW}${sep}g" \
-    -e "s${sep}__PASS_STORE_DIR_SHELL__${sep}${PASS_STORE_DIR_SHELL}${sep}g" \
-    -e "s${sep}__PASS_CMD_DEFAULT__${sep}${PASS_CMD_DEFAULT}${sep}g"
+    -e "s${sep}__SECRET_NAMESPACE__${sep}${SECRET_NAMESPACE}${sep}g" \
+    -e "s${sep}__SECRET_CMD__${sep}${SECRET_CMD}${sep}g"
 }
 
 should_skip_path() {
@@ -183,9 +215,9 @@ ansible-kamal: rendered $count_out file(s) into $TARGET_DIR_ABS
 Next steps:
   1. Review generated files (git status / git diff).
   2. cd infra/ansible && make setup && make test
-  3. Generate deploy SSH key + DB password(s); store in pass under: $PASS_NAMESPACE
+  3. Generate deploy SSH key + DB password(s); store them under: $SECRET_NAMESPACE
   4. DNS A records → $VPS_IP for: $DOMAIN_PROD${DOMAIN_STAGING:+ $DOMAIN_STAGING}
-  5. DEPLOY_SSH_KEY="\$(pass show $PASS_NAMESPACE/deploy_ssh_public_key)" make -C infra/ansible bootstrap
+  5. DEPLOY_SSH_KEY="\$($SECRET_CMD $SECRET_NAMESPACE/deploy_ssh_public_key)" make -C infra/ansible bootstrap
   6. make -C infra/ansible ansible
   7. Wire GitHub Environments + secrets per infra/kamal/README.md
   8. ENV=production make deploy$( [[ "$ENV_MODE" == "staging+production" ]] && echo "  (and ENV=staging make deploy)" )
