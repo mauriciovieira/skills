@@ -52,8 +52,6 @@ jobs:
           JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
           JEV_SERVER: ${{ github.workspace }}/.jev-server/dist/server.js
           JEV_GUARD: ${{ github.workspace }}/.github/jev/evidence-guard.sh
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           # A pull_request event checks out the MERGE REF, so these scripts are
@@ -64,8 +62,18 @@ jobs:
           # arbitrary code in a step whose environment holds JEV_API_KEY.
           # claude-code-action self-protects this way too, but its check covers
           # the workflow file only and nothing was watching .github/jev/.
+          #
+          # printf with the word as an ARGUMENT, never a literal marker in this
+          # source. Actions echoes the whole run: script into the log before
+          # running it, so any marker written literally here is in every log
+          # forever, whether or not it fired. run_verdict() and babysit's
+          # verdict() both decide by grepping those markers, so a literal would
+          # be a permanent false positive - and the day someone writes
+          # "declined" instead of "escalated", every run becomes a merge
+          # authorised by a line of source code. Observed in skills run
+          # 35717860377: the echoed source and the real output sat in one log.
           if ! git diff --quiet "origin/$BASE_REF" HEAD -- .github/jev/; then
-            echo "jev-triage: escalated (this PR modifies the triage scripts)"
+            printf 'jev-triage: %s (%s)\n' escalated 'this PR modifies the triage scripts'
             echo "escalate=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
