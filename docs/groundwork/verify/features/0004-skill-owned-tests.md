@@ -21,7 +21,7 @@ open. The suite also asks the prefixed-and-suffixed question of every credential
 than of one, after a rule tested only at its literal spelling shipped as an exact match while
 95 assertions stayed green.
 
-`ansible-kamal/test/render.sh` is 45 assertions over the renderer, which writes a deploy tree
+`ansible-kamal/test/render.sh` is 54 assertions over the renderer, which writes a deploy tree
 into somebody else's project. It renders into a temp directory in both `ENV_MODE`s and asserts
 that no placeholder and no secret-manager-specific string leaks into the output, that the
 generated scripts parse, that they and the ansible recipe all quote the `SECRET_CMD`
@@ -59,7 +59,7 @@ review workflow reviews the diff; it does not run anything.
 ```
 
 Observable outcome: `own-tests ok  run.sh: 147/147 OK`, `own-tests ok  run.sh: 34/34 OK`, and
-`own-tests ok  render.sh: 45/45 OK`. Skills with no test read `skip  none`, which is a fact,
+`own-tests ok  render.sh: 54/54 OK`. Skills with no test read `skip  none`, which is a fact,
 not a pass.
 
 ## Known failure modes
@@ -70,7 +70,12 @@ assertion 29.
 
 Also proven, in `ansible-kamal`, one mutation at a time: deleting the `/proc` arm from the
 guard fails 6 assertions and leaves the near-miss accept `/opt/procurement/bin/secret` green,
-so the arm is doing the work and not simply refusing everything. And unquoting the
+so the arm is doing the work and not simply refusing everything. Narrowing `require` back from
+`[[:space:]]` to a literal space fails 6 and leaves the three space-only cases green, which is
+how the space cases earn their place: they are the control that proves the other six test the
+new path. Writing those six with `$(printf '\n')` instead of `$'\n'` made three of them pass
+against the bug, because command substitution strips the trailing newline and the value
+arrived empty - a green assertion measuring the wrong check. And unquoting the
 `SECRET_CMD` expansion in
 `templates/scripts/kamal-deploy.sh` fails `render.sh` twice, once per `ENV_MODE`, with
 `both generated scripts quote the SECRET_CMD expansion`. Two earlier proofs in that skill

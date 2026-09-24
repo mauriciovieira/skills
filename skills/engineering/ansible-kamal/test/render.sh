@@ -166,6 +166,33 @@ TARGET_DIR="$d" "$SKILL/scripts/render.sh" >/dev/null 2>&1
 [ $? = 2 ]
 check $? "a whitespace-only required variable is rejected with exit 2"
 
+# Asked of the class and of more than one variable: SECRET_CMD has a second
+# fence in the guard below `require`, these do not. A tab reaching the templates
+# word-splits at the unquoted call sites and drops the namespace prefix.
+blank() {
+    d="$TMP/blank"
+    rm -rf "$d"
+    mkdir -p "$d"
+    # The override goes LAST: env takes the final assignment for a name, so
+    # putting it first would let the defaults below silently win.
+    env APP_SLUG=myapp APP_SERVICE=my-app APP_SLUG_UPPER=MYAPP \
+        INVENTORY_GROUP=myapp VPS_IP=203.0.113.10 DOMAIN_PROD=example.com \
+        DOMAIN_STAGING= LETSENCRYPT_EMAIL=admin@example.com DEPLOY_USER=myapp_deploy \
+        IMAGE_REPO=myorg/my-app SECRET_CMD=/usr/local/bin/secret \
+        SECRET_NAMESPACE=infra/myapp ENV_MODE=single TARGET_DIR="$d" \
+        "$1=$2" "$SKILL/scripts/render.sh" >/dev/null 2>&1
+    [ $? = 2 ]
+    check $? "$1 of only $3 is rejected with exit 2"
+}
+
+for v in SECRET_NAMESPACE APP_SLUG DEPLOY_USER; do
+    # $'..' and not $(printf ..): command substitution strips trailing newlines,
+    # so the newline case would arrive empty and be caught by the wrong check.
+    blank "$v" $'\t' "a tab"
+    blank "$v" $'\n' "a newline"
+    blank "$v" "  " "spaces"
+done
+
 total=$((pass + fail))
 if [ "$fail" = 0 ]; then
     echo "$pass/$total OK"

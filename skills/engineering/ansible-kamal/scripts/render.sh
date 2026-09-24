@@ -30,7 +30,10 @@ set -euo pipefail
 
 require() {
   local var="$1"
-  if [[ -z "${!var:-}" || -z "${!var// /}" ]]; then
+  # [[:space:]] and not a literal " ": a tab-only value used to pass here, and
+  # a tab is IFS, so it word-split at the unquoted call sites in the generated
+  # scripts and silently dropped the namespace prefix from the secret name.
+  if [[ -z "${!var:-}" || -z "${!var//[[:space:]]/}" ]]; then
     echo "ERROR: required env var $var is empty or only whitespace" >&2
     exit 2
   fi

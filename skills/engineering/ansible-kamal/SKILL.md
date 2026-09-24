@@ -80,7 +80,7 @@ TARGET_DIR=. \
 ~/.claude/skills/ansible-kamal/scripts/render.sh
 ```
 
-For `ENV_MODE=single` leave `DOMAIN_STAGING` empty (or unset). `SECRET_CMD` must be an absolute path with no whitespace, no `$` and no backtick; everything else is rejected, because it would resolve differently depending on which directory invokes it.
+For `ENV_MODE=single` leave `DOMAIN_STAGING` empty (or unset). `SECRET_CMD` must be an absolute path with no whitespace, no `$` and no backtick, and must not be under `/proc`; everything else is rejected, because it would resolve differently depending on which directory invokes it. That check runs at render time only: the generated scripts read `SECRET_CMD` from the environment if it is set, so `SECRET_CMD=bin/secret make deploy` bypasses it for that one run.
 
 The script:
 
