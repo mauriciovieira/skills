@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.18] - 2026-09-24
+
+### Fixed
+
+- make SECRET_CMD resolve the same from every caller ([#25](https://github.com/mauriciovieira/skills/pull/25))
+- reject relative SECRET_CMD without a leading dot ([#25](https://github.com/mauriciovieira/skills/pull/25))
+- reject /proc paths, which are relative in disguise ([#25](https://github.com/mauriciovieira/skills/pull/25))
+- require rejects any whitespace, not only spaces ([#25](https://github.com/mauriciovieira/skills/pull/25))
+
+### Changed
+
+- replace the pass store with a generic SECRET_CMD ([#25](https://github.com/mauriciovieira/skills/pull/25))
+- SECRET_CMD is an absolute path, no arguments ([#25](https://github.com/mauriciovieira/skills/pull/25))
+
 ## [0.2.17] - 2026-09-24
 
 ### Changed

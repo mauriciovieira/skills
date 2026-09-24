@@ -1,6 +1,6 @@
 {
   "name": "mauriciovieira-skills",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "skills": [
     "./skills/engineering/ansible-kamal",
     "./skills/engineering/babysit-with-github-copilot",
