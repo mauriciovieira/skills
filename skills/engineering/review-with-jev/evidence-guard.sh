@@ -96,7 +96,10 @@ classify() {
     # that the caller can see and override; under-excluding ships a key.
     *id_rsa*|*id_dsa*|*id_ecdsa*|*id_ed25519*) echo "$SECRET_REASON"; return ;;
     *.pem*|*.p12*|*.pfx*|*.key*|*.jks*) echo "$SECRET_REASON"; return ;;
-    *.keystore*|*.kdbx*|*.p8*|*.ppk*) echo "$SECRET_REASON"; return ;;
+    # No *.keystore* here: the unanchored *.key* on the line above already
+    # matches it, so listing it again is dead code rather than extra coverage
+    # (shellcheck SC2222). *.kdbx* is NOT covered by it and stays.
+    *.kdbx*|*.p8*|*.ppk*) echo "$SECRET_REASON"; return ;;
     # Unanchored for the same reason as the keys above, and written out
     # because the first version of this line was not: `.pgpass` and
     # `.htpasswd` were exact matches, so backup.pgpass, db.pgpass.bak and
