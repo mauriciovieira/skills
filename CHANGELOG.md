@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.20] - 2026-11-19
+
+### Added
+
+- replace handoff with the handoff/handin pair ([#30](https://github.com/mauriciovieira/skills/pull/30))
+
 ## [0.2.19] - 2026-09-24
 
 ### Fixed
